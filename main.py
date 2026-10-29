@@ -109,10 +109,8 @@ print(f"[OK] Saliency map saved to: {gradcam_save_path}")
 # ==========================================
 print("\nRunning Unexplainable Prediction Suppression (UPS) check...")
 
-# 1. Load the anatomical lung segmenter
 seg_model = xrv.baseline_models.chestx_det.PSPNet()
 
-# 2. Extract anatomical masks for the input image
 with torch.no_grad():
     seg_mask = seg_model(input_tensor.detach())
 
@@ -122,7 +120,6 @@ right_lung_idx = seg_model.targets.index("Right Lung")
 lung_mask = (seg_mask[0, left_lung_idx] > 0.5) | (seg_mask[0, right_lung_idx] > 0.5)
 lung_mask_np = lung_mask.cpu().numpy().astype(np.float32)
 
-# Match resolutions between mask and heatmap (224, 224)
 lung_mask_resized = skimage.transform.resize(
     lung_mask_np, 
     heatmap.shape,
@@ -130,7 +127,6 @@ lung_mask_resized = skimage.transform.resize(
     anti_aliasing=False
 )
 
-# 3. Calculate Anatomical Attribution Mass Ratio (AAMR)
 total_heatmap_mass = np.sum(heatmap)
 anatomical_mass = np.sum(heatmap * lung_mask_resized)
 
@@ -141,7 +137,6 @@ else:
 
 print(f"Anatomical Attribution Mass Ratio (AAMR): {aamr:.4f}")
 
-# 4. Enforce Safety Gate (Threshold: 0.85)
 AAMR_THRESHOLD = 0.85
 
 if aamr >= AAMR_THRESHOLD:
@@ -152,11 +147,58 @@ else:
     print(f"[ALERT] {status}: Heatmap mass falls outside lung boundaries.")
     print("Action: Automated diagnostic label SUPPRESSED. Case routed to human review.")
 
-# 5. Save the safety audit report to Drive
 with open(audit_file, "w") as f:
+    f.write("--- SECTION 5.3: SAFETY GATE (UPS) AUDIT REPORT ---\n")
     f.write(f"Condition Evaluated: {top_pathology}\n")
     f.write(f"Raw Score: {results[top_pathology]:.4f}\n")
     f.write(f"Calculated AAMR: {aamr:.4f}\n")
     f.write(f"Safety Status: {status}\n")
 
-print(f"[OK] Safety audit saved to: {audit_file}")
+# ========================================================
+# SECTION 5.4: EPISTEMIC UNCERTAINTY & ENTROPY REFUSAL
+# ========================================================
+print("\nRunning Epistemic Uncertainty & Entropy Audit...")
+
+raw_probs = np.array(list(results.values()), dtype=np.float64)
+probs_clipped = np.clip(raw_probs, 1e-7, 1.0 - 1e-7)
+class_entropies = -(probs_clipped * np.log2(probs_clipped) + (1.0 - probs_clipped) * np.log2(1.0 - probs_clipped))
+
+mean_entropy = float(np.mean(class_entropies))
+print(f"Mean Predictive Entropy: {mean_entropy:.4f} bits (Max possible: 1.0000)")
+
+ambiguous_findings = [path for path, score in results.items() if 0.45 <= score <= 0.65]
+print(f"Number of ambiguous findings in [0.45, 0.65]: {len(ambiguous_findings)}")
+
+ENTROPY_THRESHOLD = 0.85
+AMBIGUITY_COUNT_THRESHOLD = 5
+
+uncertainty_refusal = False
+refusal_reasons = []
+
+if mean_entropy > ENTROPY_THRESHOLD:
+    uncertainty_refusal = True
+    refusal_reasons.append(f"Excessive global entropy ({mean_entropy:.4f} > {ENTROPY_THRESHOLD})")
+
+if len(ambiguous_findings) >= AMBIGUITY_COUNT_THRESHOLD:
+    uncertainty_refusal = True
+    refusal_reasons.append(f"{len(ambiguous_findings)} classes clustered in ambiguous range [0.45, 0.65]")
+
+if uncertainty_refusal:
+    uncertainty_status = "REFUSED - HIGH EPISTEMIC UNCERTAINTY"
+    print(f"\n[REFUSAL TRIGGERED] {uncertainty_status}")
+    for reason in refusal_reasons:
+        print(f" - Cause: {reason}")
+    print("Action: Output suppressed. Routed to MANDATORY URGENT RADIOLOGIST REVIEW.")
+else:
+    uncertainty_status = "PASS - Low Predictive Ambiguity"
+    print(f"[PASS] {uncertainty_status}")
+
+with open(audit_file, "a") as f:
+    f.write(f"\n--- SECTION 5.4: UNCERTAINTY & ENTROPY AUDIT ---\n")
+    f.write(f"Mean Predictive Entropy: {mean_entropy:.4f}\n")
+    f.write(f"Ambiguous Findings Count: {len(ambiguous_findings)}\n")
+    f.write(f"Uncertainty Status: {uncertainty_status}\n")
+    if uncertainty_refusal:
+        f.write(f"Refusal Reasons: {'; '.join(refusal_reasons)}\n")
+
+print(f"\n[OK] Combined safety audit successfully updated at: {audit_file}")
