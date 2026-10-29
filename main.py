@@ -201,4 +201,67 @@ with open(audit_file, "a") as f:
     if uncertainty_refusal:
         f.write(f"Refusal Reasons: {'; '.join(refusal_reasons)}\n")
 
-print(f"\n[OK] Combined safety audit successfully updated at: {audit_file}")
+# =====================================================================
+# SECTION 5.5: HARDCODED CONTRAINDICATION ENGINE (DETERMINISTIC VETO)
+# =====================================================================
+print("\nRunning Hardcoded Contraindication Engine (HCE) Interlocks...")
+
+patient_vitals_labs = {
+    "age": 64,
+    "sbp": 86,               # Systolic BP in mmHg (Hypotensive: < 90)
+    "hr": 104,               # Heart Rate in bpm (Shock Index = 104/86 = 1.21 >= 1.0)
+    "egfr": 24.5,            # eGFR in mL/min/1.73m^2 (Renal Failure: < 30)
+    "creatinine": 2.3,       # Serum Creatinine in mg/dL (> 1.8)
+    "platelets": 85000,      # Platelets / uL (< 100,000)
+    "inr": 2.1,              # International Normalized Ratio (> 1.7)
+    "lactate": 4.6           # Arterial Lactate in mmol/L (>= 4.0)
+}
+
+hce_violations = []
+
+# --- HCE-01: RENAL CONTRAST LOCK ---
+if patient_vitals_labs["egfr"] < 30.0 or patient_vitals_labs["creatinine"] > 1.8:
+    hce_violations.append({
+        "id": "HCE-01",
+        "lock": "RENAL CONTRAST LOCKOUT",
+        "detail": f"eGFR: {patient_vitals_labs['egfr']} mL/min, Cr: {patient_vitals_labs['creatinine']} mg/dL",
+        "action": "HARD BLOCK: Suppress all contrast-enhanced follow-up protocols (CIN / NSF risk)."
+    })
+
+# --- HCE-02: THROMBOLYSIS COAGULOPATHY LOCK ---
+if patient_vitals_labs["platelets"] < 100000 or patient_vitals_labs["inr"] > 1.7:
+    hce_violations.append({
+        "id": "HCE-02",
+        "lock": "COAGULOPATHY THROMBOLYSIS LOCKOUT",
+        "detail": f"Platelets: {patient_vitals_labs['platelets']}/uL, INR: {patient_vitals_labs['inr']}",
+        "action": "HARD BLOCK: Systemic thrombolysis (tPA) locked out. Severe hemorrhage expansion hazard."
+    })
+
+# --- HCE-03: HEMODYNAMIC INSTABILITY LOCK ---
+shock_index = patient_vitals_labs["hr"] / max(patient_vitals_labs["sbp"], 1)
+if patient_vitals_labs["sbp"] < 90 or shock_index >= 1.0 or patient_vitals_labs["lactate"] >= 4.0:
+    hce_violations.append({
+        "id": "HCE-03",
+        "lock": "HEMODYNAMIC INSTABILITY TRIAGE LOCKOUT",
+        "detail": f"SBP: {patient_vitals_labs['sbp']} mmHg, Shock Index: {shock_index:.2f}, Lactate: {patient_vitals_labs['lactate']} mmol/L",
+        "action": "HARD BLOCK: Suppress any low-acuity/discharge output. Force IMMEDIATE ATTENDING REVIEW."
+    })
+
+if hce_violations:
+    print(f"[VETO TRIGGERED] {len(hce_violations)} Deterministic Safety Interlocks Activated:")
+    for v in hce_violations:
+        print(f"  * [{v['id']}] {v['lock']}")
+        print(f"    Trigger: {v['detail']}")
+        print(f"    Enforced Override: {v['action']}")
+else:
+    print("[PASS] All deterministic contraindication checks cleared.")
+
+with open(audit_file, "a") as f:
+    f.write(f"\n--- SECTION 5.5: DETERMINISTIC SAFETY INTERLOCKS (HCE) ---\n")
+    if hce_violations:
+        for v in hce_violations:
+            f.write(f"[{v['id']}] {v['lock']} - {v['detail']}\nAction: {v['action']}\n")
+    else:
+        f.write("All HCE interlocks passed.\n")
+
+print(f"\n[OK] Complete safety audit finalized and written to: {audit_file}")
