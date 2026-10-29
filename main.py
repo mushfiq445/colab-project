@@ -1,26 +1,17 @@
-
-
-# Install dependencies
-!pip install -q torchxrayvision scikit-image numpy
-
 import os
-import json
 import numpy as np
 import skimage.io
 import torch
 import torchvision
 import torchxrayvision as xrv
 
-# --- Step A: Mount Google Drive ---
-from google.colab import drive
-drive.mount('/content/drive')
-
-# Create an output folder in your Google Drive if it doesn't already exist
+# Set up output path directly to mounted Google Drive
 output_dir = '/content/drive/MyDrive/XRay_Predictions'
 os.makedirs(output_dir, exist_ok=True)
 output_file = os.path.join(output_dir, 'predictions.txt')
 
 # 1. Load the pre-trained DenseNet model
+print("Loading DenseNet model...")
 model = xrv.models.DenseNet(weights="densenet121-res224-all")
 model.eval()
 
@@ -45,6 +36,7 @@ img_tensor = transform(img)
 img_tensor = torch.from_numpy(img_tensor)
 
 # 5. Run inference (Batch shape: [1, 1, 224, 224])
+print("Running inference...")
 with torch.no_grad():
     predictions = model(img_tensor[None, ...])
 
@@ -60,4 +52,3 @@ with open(output_file, 'w') as f:
         f.write(line + "\n")
 
 print(f"\n[OK] Results successfully saved to: {output_file}")
-
