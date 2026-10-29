@@ -72,7 +72,7 @@ print("\nGenerating Grad-CAM heatmap for Effusion...")
 target_idx = model.pathologies.index("Effusion")
 
 # Note: In torchxrayvision, the underlying torchvision model is under model.model
-target_layer = model.model.features.denseblock4
+target_layer = model.features.denseblock4
 gradcam = LayerGradCam(model, target_layer)
 
 input_tensor = img_tensor.clone().detach().requires_grad_(True)
