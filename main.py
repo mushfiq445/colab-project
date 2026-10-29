@@ -1,5 +1,4 @@
 import os
-import glob
 import numpy as np
 import skimage.io
 import torch
@@ -17,27 +16,30 @@ print("Loading DenseNet model...")
 model = xrv.models.DenseNet(weights="densenet121-res224-all")
 model.eval()
 
-# 2. Check for real images in the Drive folder
-supported_exts = ('*.png', '*.jpg', '*.jpeg', '*.tif', '*.tiff')
-found_images = []
-for ext in supported_exts:
-    found_images.extend(glob.glob(os.path.join(images_dir, ext)))
+# 2. Check for any uploaded files inside the images folder
+candidates = [os.path.join(images_dir, f) for f in os.listdir(images_dir) if not f.startswith('.')]
 
-if found_images:
-    target_img_path = found_images[0]
-    print(f"Loading real X-ray image: {target_img_path}")
-    raw_img = skimage.io.imread(target_img_path)
-    
-    # Handle multichannel color images by converting to 2D grayscale
-    if raw_img.ndim == 3:
-        raw_img = raw_img.mean(axis=2)
+img_loaded = False
+if candidates:
+    target_img_path = candidates[0]
+    print(f"Detected file: {target_img_path}")
+    try:
+        raw_img = skimage.io.imread(target_img_path)
         
-    # Scale integer images to range [-1024, 1024]
-    max_val = 65535 if raw_img.dtype == np.uint16 else 255
-    img = xrv.datasets.normalize(raw_img, max_val)
-    img = img[None, ...]
-else:
-    print("No image found in Drive. Running simulation array...")
+        # Handle multichannel/RGBA images by reducing to 2D grayscale
+        if raw_img.ndim == 3:
+            raw_img = raw_img.mean(axis=2)
+            
+        max_val = 65535 if raw_img.dtype == np.uint16 else 255
+        img = xrv.datasets.normalize(raw_img, max_val)
+        img = img[None, ...]
+        img_loaded = True
+        print(f"Successfully loaded and preprocessed image: {os.path.basename(target_img_path)}")
+    except Exception as e:
+        print(f"Failed to read image ({e}), falling back to simulation array.")
+
+if not img_loaded:
+    print("Running simulation array...")
     np.random.seed(42)
     raw_img = np.random.randint(50, 200, size=(512, 512), dtype=np.uint8)
     img = xrv.datasets.normalize(raw_img, 255)[None, ...]
@@ -51,7 +53,7 @@ img_tensor = transform(img)
 img_tensor = torch.from_numpy(img_tensor)
 
 # 4. Run inference
-print("Running inference...")
+print("Running inference on image...")
 with torch.no_grad():
     predictions = model(img_tensor[None, ...])
 
