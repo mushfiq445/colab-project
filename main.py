@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import skimage.io
+import skimage.transform
 import torch
 import torchvision
 import torchxrayvision as xrv
@@ -68,7 +69,7 @@ with open(output_file, 'w') as f:
 
 print(f"\n[OK] Predictions saved to: {output_file}")
 
-# 5. Generate Grad-CAM for the highest scoring condition (Effusion)
+# 5. Generate Grad-CAM for Effusion
 top_pathology = "Effusion"
 print(f"\nGenerating Grad-CAM heatmap for {top_pathology}...")
 
@@ -121,9 +122,17 @@ right_lung_idx = seg_model.targets.index("Right Lung")
 lung_mask = (seg_mask[0, left_lung_idx] > 0.5) | (seg_mask[0, right_lung_idx] > 0.5)
 lung_mask_np = lung_mask.cpu().numpy().astype(np.float32)
 
+# Match resolutions between mask and heatmap (224, 224)
+lung_mask_resized = skimage.transform.resize(
+    lung_mask_np, 
+    heatmap.shape,
+    order=0,
+    anti_aliasing=False
+)
+
 # 3. Calculate Anatomical Attribution Mass Ratio (AAMR)
 total_heatmap_mass = np.sum(heatmap)
-anatomical_mass = np.sum(heatmap * lung_mask_np)
+anatomical_mass = np.sum(heatmap * lung_mask_resized)
 
 if total_heatmap_mass > 0:
     aamr = anatomical_mass / total_heatmap_mass
@@ -145,10 +154,9 @@ else:
 
 # 5. Save the safety audit report to Drive
 with open(audit_file, "w") as f:
-    f.write("--- SAFETY GATE (UPS) AUDIT REPORT ---\n")
     f.write(f"Condition Evaluated: {top_pathology}\n")
     f.write(f"Raw Score: {results[top_pathology]:.4f}\n")
     f.write(f"Calculated AAMR: {aamr:.4f}\n")
     f.write(f"Safety Status: {status}\n")
 
-print(f"[OK] Audit report successfully saved to: {audit_file}")
+print(f"[OK] Safety audit saved to: {audit_file}")
