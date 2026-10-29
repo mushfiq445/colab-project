@@ -25,7 +25,11 @@ seg_model = xrv.baseline_models.chestx_det.PSPNet()
 seg_model.eval()
 
 # 2. Find and Load Image
-candidates = [os.path.join(images_dir, f) for f in os.listdir(images_dir) if not f.startswith('.') and f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+candidates = [
+    os.path.join(images_dir, f) 
+    for f in os.listdir(images_dir) 
+    if not f.startswith('.') and f.lower().endswith(('.png', '.jpg', '.jpeg'))
+]
 
 if not candidates:
     print(f"[ERROR] No valid X-Ray found in {images_dir}")
@@ -105,7 +109,6 @@ with open(output_file, 'w') as f:
 
 print(f"\n[OK] Predictions saved to: {output_file}")
 
-# Target top predicted pathology
 top_pathology, top_score = sorted_results[0]
 DIAGNOSTIC_THRESHOLD = 0.50
 
@@ -121,7 +124,7 @@ if top_score < DIAGNOSTIC_THRESHOLD:
 else:
     print(f"\n--- SECTION 5.3: EXPLAINABILITY (GRAD-CAM) & UPS GATE ---")
     print(f"Targeting highest probability pathology for spatial audit: {top_pathology} ({top_score:.4f})")
-    
+
     target_idx = model.pathologies.index(top_pathology)
     target_layer = model.features.denseblock4
     gradcam = LayerGradCam(model, target_layer)
