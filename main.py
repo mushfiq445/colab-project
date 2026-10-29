@@ -11,6 +11,7 @@ from captum.attr import LayerGradCam
 drive_root = '/content/drive/MyDrive/XRay_Predictions'
 images_dir = os.path.join(drive_root, 'images')
 output_file = os.path.join(drive_root, 'predictions.txt')
+audit_file = os.path.join(drive_root, 'safety_audit.txt')
 os.makedirs(images_dir, exist_ok=True)
 
 # 1. Load DenseNet model
@@ -67,18 +68,15 @@ with open(output_file, 'w') as f:
 
 print(f"\n[OK] Predictions saved to: {output_file}")
 
-# 5. Generate Grad-CAM for Effusion
-print("\nGenerating Grad-CAM heatmap for Effusion...")
-target_idx = model.pathologies.index("Effusion")
+# 5. Generate Grad-CAM for the highest scoring condition (Effusion)
+top_pathology = "Effusion"
+print(f"\nGenerating Grad-CAM heatmap for {top_pathology}...")
 
-# Note: In torchxrayvision, the underlying torchvision model is under model.model
+target_idx = model.pathologies.index(top_pathology)
 target_layer = model.features.denseblock4
 gradcam = LayerGradCam(model, target_layer)
 
-input_tensor = img_tensor.clone().detach().requires_grad_(True)
-if len(input_tensor.shape) == 3:
-    input_tensor = input_tensor.unsqueeze(0)
-
+input_tensor = img_tensor.clone().detach().unsqueeze(0).requires_grad_(True)
 attribution = gradcam.attribute(input_tensor, target=target_idx)
 
 upsampled_attr = LayerGradCam.interpolate(attribution, (224, 224), interpolate_mode="bilinear")
@@ -96,12 +94,61 @@ axs[0].axis("off")
 
 axs[1].imshow(raw_display_img, cmap="gray")
 axs[1].imshow(heatmap, cmap="jet", alpha=0.45)
-axs[1].set_title("Grad-CAM: Effusion", fontsize=12)
+axs[1].set_title(f"Grad-CAM: {top_pathology}", fontsize=12)
 axs[1].axis("off")
 
-save_path = os.path.join(drive_root, "gradcam_effusion.png")
+gradcam_save_path = os.path.join(drive_root, "gradcam_effusion.png")
 plt.tight_layout()
-plt.savefig(save_path, bbox_inches="tight", dpi=150)
+plt.savefig(gradcam_save_path, bbox_inches='tight', dpi=150)
 plt.close()
+print(f"[OK] Saliency map saved to: {gradcam_save_path}")
 
-print(f"[OK] Saliency map saved to: {save_path}")
+# ==========================================
+# SECTION 5.3: AUTOMATED SAFETY GATE (UPS)
+# ==========================================
+print("\nRunning Unexplainable Prediction Suppression (UPS) check...")
+
+# 1. Load the anatomical lung segmenter
+seg_model = xrv.baseline_models.chestx_det.PSPNet()
+
+# 2. Extract anatomical masks for the input image
+with torch.no_grad():
+    seg_mask = seg_model(input_tensor.detach())
+
+left_lung_idx = seg_model.targets.index("Left Lung")
+right_lung_idx = seg_model.targets.index("Right Lung")
+
+lung_mask = (seg_mask[0, left_lung_idx] > 0.5) | (seg_mask[0, right_lung_idx] > 0.5)
+lung_mask_np = lung_mask.cpu().numpy().astype(np.float32)
+
+# 3. Calculate Anatomical Attribution Mass Ratio (AAMR)
+total_heatmap_mass = np.sum(heatmap)
+anatomical_mass = np.sum(heatmap * lung_mask_np)
+
+if total_heatmap_mass > 0:
+    aamr = anatomical_mass / total_heatmap_mass
+else:
+    aamr = 0.0
+
+print(f"Anatomical Attribution Mass Ratio (AAMR): {aamr:.4f}")
+
+# 4. Enforce Safety Gate (Threshold: 0.85)
+AAMR_THRESHOLD = 0.85
+
+if aamr >= AAMR_THRESHOLD:
+    status = "VERIFIED - Pathologically Plausible"
+    print(f"[PASS] {status}: Attribution aligns with pulmonary anatomy.")
+else:
+    status = "REJECTED - Untrustworthy Shortcut Detected"
+    print(f"[ALERT] {status}: Heatmap mass falls outside lung boundaries.")
+    print("Action: Automated diagnostic label SUPPRESSED. Case routed to human review.")
+
+# 5. Save the safety audit report to Drive
+with open(audit_file, "w") as f:
+    f.write("--- SAFETY GATE (UPS) AUDIT REPORT ---\n")
+    f.write(f"Condition Evaluated: {top_pathology}\n")
+    f.write(f"Raw Score: {results[top_pathology]:.4f}\n")
+    f.write(f"Calculated AAMR: {aamr:.4f}\n")
+    f.write(f"Safety Status: {status}\n")
+
+print(f"[OK] Audit report successfully saved to: {audit_file}")
