@@ -67,15 +67,18 @@ with open(output_file, 'w') as f:
 
 print(f"\n[OK] Predictions saved to: {output_file}")
 
-# 5. Generate Grad-CAM for the highest scoring pathology
-top_pathology, top_score = sorted_results[0]
-print(f"\nGenerating Grad-CAM heatmap for top condition: {top_pathology} ({top_score:.4f})...")
+# 5. Generate Grad-CAM for Effusion
+print("\nGenerating Grad-CAM heatmap for Effusion...")
+target_idx = model.pathologies.index("Effusion")
 
-target_idx = model.pathologies.index(top_pathology)
+# Note: In torchxrayvision, the underlying torchvision model is under model.model
 target_layer = model.model.features.denseblock4
 gradcam = LayerGradCam(model, target_layer)
 
-input_tensor = img_tensor.clone().detach().unsqueeze(0).requires_grad_(True)
+input_tensor = img_tensor.clone().detach().requires_grad_(True)
+if len(input_tensor.shape) == 3:
+    input_tensor = input_tensor.unsqueeze(0)
+
 attribution = gradcam.attribute(input_tensor, target=target_idx)
 
 upsampled_attr = LayerGradCam.interpolate(attribution, (224, 224), interpolate_mode="bilinear")
@@ -93,12 +96,12 @@ axs[0].axis("off")
 
 axs[1].imshow(raw_display_img, cmap="gray")
 axs[1].imshow(heatmap, cmap="jet", alpha=0.45)
-axs[1].set_title(f"Grad-CAM: {top_pathology}", fontsize=12)
+axs[1].set_title("Grad-CAM: Effusion", fontsize=12)
 axs[1].axis("off")
 
-gradcam_save_path = os.path.join(drive_root, f"gradcam_{top_pathology.lower().replace(' ', '_')}.png")
+save_path = os.path.join(drive_root, "gradcam_effusion.png")
 plt.tight_layout()
-plt.savefig(gradcam_save_path, bbox_inches='tight', dpi=150)
+plt.savefig(save_path, bbox_inches="tight", dpi=150)
 plt.close()
 
-print(f"[OK] Saliency map saved to: {gradcam_save_path}")
+print(f"[OK] Saliency map saved to: {save_path}")
