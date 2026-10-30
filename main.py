@@ -98,9 +98,11 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
     record["aamr"] = round(float(aamr), 3)
 
     if attr_map is not None:
-        heatmap_path = os.path.join(output_dir, f"gradcam_{scan_id}_{top_pathology.lower()}.png")
+        scratch_dir = "/tmp/samd_scratch"
+        os.makedirs(scratch_dir, exist_ok=True)
+        heatmap_path = os.path.join(scratch_dir, f"gradcam_{scan_id}_{top_pathology.lower()}.png")
         save_gradcam_overlay(attr_map, raw_img, heatmap_path)
-        print(f"[LOCAL] Saved Grad-CAM overlay -> {heatmap_path}")
+        print(f"[SCRATCH DISK] Saved local Grad-CAM -> {heatmap_path}")
         router.route_file(heatmap_path)
 
     # --- LAYER 3: Epistemic Uncertainty Gate ---
@@ -127,7 +129,7 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
     scan_report = os.path.join(output_dir, f"{scan_id}_audit.txt")
     with open(scan_report, "w") as f:
         f.write(f"SaMD Clinical Safety Audit: {scan_id}\n" + "=" * 45 + "\n")
-        f.write(f"Disposition: {record["final_disposition"]}\n")
+        f.write(f"Disposition: {record['final_disposition']}\n")
         f.write(f"Top Finding: {top_pathology} ({top_score:.4f})\n")
         f.write(f"Layer 1 Organ Pass: {l1_pass} ({thoracic_pixels} px)\n")
         f.write(f"Layer 2 UPS Status: {ups_status} (AAMR: {aamr:.3f})\n")
