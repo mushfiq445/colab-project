@@ -3,6 +3,7 @@ import sys
 import csv
 import json
 import glob
+import urllib.request
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -15,10 +16,34 @@ from src.explainability import evaluate_ups_gate
 from src.safety_engine import evaluate_epistemic_uncertainty, evaluate_contraindications
 from src.storage_router import HybridStorageRouter
 
+def ensure_seed_assets(images_dir: str):
+    """Ensures a genuine benchmark seed scan and clinical sidecar exist."""
+    os.makedirs(images_dir, exist_ok=True)
+    img_path = os.path.join(images_dir, "pneumonia.jpg")
+    json_path = os.path.join(images_dir, "pneumonia_vitals.json")
+
+    if not os.path.exists(img_path):
+        print(f"[FETCH SEED] Downloading genuine seed radiograph to {img_path}...")
+        url = "https://raw.githubusercontent.com/ieee8023/covid-chestxray-dataset/master/images/pneumonia-viral-PA-0001.jpg"
+        try:
+            urllib.request.urlretrieve(url, img_path)
+            print("[FETCH SEED] Download complete.")
+        except Exception as e:
+            print(f"[ERROR] Failed to fetch seed image: {e}")
+
+    if not os.path.exists(json_path):
+        print(f"[SIDECAR INIT] Generating default clinical vitals sidecar -> {json_path}")
+        default_sidecar = {
+            "vitals": {"HeartRate": 78, "SystolicBP": 118},
+            "labs": {"eGFR": 88.0, "Creatinine": 0.95, "Platelets": 240000, "INR": 1.05, "Lactate": 1.2}
+        }
+        with open(json_path, "w") as f:
+            json.dump(default_sidecar, f, indent=2)
+
 def load_patient_clinical_profile(json_path: str):
     default_vitals = {"HeartRate": 75, "SystolicBP": 120}
     default_labs = {"eGFR": 90.0, "Creatinine": 0.9, "Platelets": 250000, "INR": 1.0, "Lactate": 1.1}
-    
+
     if os.path.exists(json_path):
         try:
             with open(json_path, "r") as f:
@@ -29,7 +54,7 @@ def load_patient_clinical_profile(json_path: str):
             return vitals, labs
         except Exception as e:
             print(f"[WARNING] Failed to parse {json_path}: {e}. Falling back to baseline.")
-    
+
     print("[DEFAULT PROFILE] Using baseline standard vitals/labs.")
     return default_vitals, default_labs
 
@@ -47,7 +72,7 @@ def save_gradcam_overlay(attr_map, raw_img, output_path):
 def process_single_scan(img_path: str, segmenter, backbone_model, device, output_dir: str, router: HybridStorageRouter):
     scan_id = os.path.splitext(os.path.basename(img_path))[0]
     print(f"\n=================== PROCESSING SCAN: {scan_id} ===================")
-    
+
     record = {
         "scan_id": scan_id,
         "l1_organ_pass": False,
@@ -80,7 +105,7 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
     sorted_preds = sorted(predictions.items(), key=lambda x: x[1], reverse=True)
     top_pathology, top_score = sorted_preds[0]
     top_class_idx = pathologies.index(top_pathology)
-    
+
     record["top_finding"] = top_pathology
     record["top_score"] = round(float(top_score), 4)
 
@@ -151,8 +176,7 @@ def main():
     output_dir = drive_base if os.path.exists(drive_base) else "audit_logs"
     images_dir = os.path.join(output_dir, "images")
 
-    os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(images_dir, exist_ok=True)
+    ensure_seed_assets(images_dir)
 
     extensions = ("*.jpg", "*.jpeg", "*.png")
     image_paths = []
