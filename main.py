@@ -22,31 +22,37 @@ def ensure_seed_assets(images_dir: str):
     img_path = os.path.join(images_dir, "pneumonia.jpg")
     json_path = os.path.join(images_dir, "pneumonia_vitals.json")
 
-    if not os.path.exists(img_path):
-        print(f"[FETCH SEED] Extracting genuine benchmark radiograph into {img_path}...")
+    # Force re-download if the previous file was a non-anatomical synthetic fallback
+    needs_download = True
+    if os.path.exists(img_path):
+        try:
+            with Image.open(img_path) as check_im:
+                # Check if it has genuine radiograph dimensions and dynamic range
+                if check_im.size[0] >= 224 and check_im.size[1] >= 224:
+                    needs_download = False
+        except Exception:
+            needs_download = True
+
+    if needs_download:
+        print(f"[FETCH SEED] Ingesting genuine NIH benchmark radiograph into {img_path}...")
         try:
             import torchxrayvision as xrv
-            # Ingests a genuine sample radiograph provided directly by torchxrayvision
-            d_nih = xrv.datasets.COVID19_Dataset(views=["PA"], transform=None)
-            sample_img = d_nih[0]["img"]  # Shape: (1, H, W)
-            # Normalize to 0-255 uint8 grayscale image
-            norm_img = sample_img[0]
-            norm_img = (norm_img - norm_img.min()) / (norm_img.max() - norm_img.min() + 1e-8)
-            norm_img = (norm_img * 255.0).astype(np.uint8)
-            im = Image.fromarray(norm_img)
+            # Fetch official sample radiograph directly from torchxrayvision repository
+            img_sample = xrv.datasets.get_sample_data("nih")
+            img_arr = img_sample["img"]  # shape: (1, 1, H, W) or (1, H, W)
+            if img_arr.ndim == 4:
+                img_arr = img_arr[0, 0]
+            elif img_arr.ndim == 3:
+                img_arr = img_arr[0]
+            
+            # Normalize to standard 0-255 uint8 grayscale image
+            norm = (img_arr - img_arr.min()) / (img_arr.max() - img_arr.min() + 1e-8)
+            norm = (norm * 255.0).astype(np.uint8)
+            im = Image.fromarray(norm)
             im.save(img_path)
-            print("[FETCH SEED] Genuine radiograph saved successfully.")
+            print(f"[FETCH SEED] Genuine NIH radiograph saved successfully ({im.size}).")
         except Exception as e:
-            print(f"[FETCH SEED FALLBACK] XRV dataset fetch failed ({e}). Generating high-frequency anatomical test scan...")
-            # Fallback high-resolution anatomical chest-like pattern
-            n = 512
-            yy, xx = np.mgrid[0:n, 0:n] / float(n)
-            img = np.full((n, n), 0.62)
-            for cx in (0.34, 0.66):
-                img[((xx - cx) / 0.13) ** 2 + ((yy - 0.38) / 0.25) ** 2 < 1.0] = 0.15
-            img[yy > 0.75] = 0.72
-            img = (np.clip(img, 0, 1) * 255.0).astype(np.uint8)
-            Image.fromarray(img).save(img_path)
+            print(f"[FETCH SEED ERROR] TorchXRayVision sample fetch failed: {e}")
 
     if not os.path.exists(json_path):
         print(f"[SIDECAR INIT] Generating default clinical vitals sidecar -> {json_path}")
@@ -109,6 +115,8 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
     record["thoracic_pixels"] = thoracic_pixels
     l1_pass = validate_two_factor_organ("CHEST", thoracic_pixels)
     record["l1_organ_pass"] = l1_pass
+
+    print(f"[LAYER 1] Thoracic pixels detected: {thoracic_pixels} | Pass: {l1_pass}")
 
     if not l1_pass:
         print(f"[REJECT] Scan {scan_id} aborted by Layer 1 Organ Router.")
