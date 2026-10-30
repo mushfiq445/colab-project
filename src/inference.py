@@ -1,56 +1,52 @@
 import os
+import shutil
 import subprocess
 import torch
-import skimage.io
+import torchvision.transforms as transforms
+from PIL import Image
 import torchxrayvision as xrv
 
-def load_diagnostic_backbone(device, checkpoint_remote="mega_pool:best_backbone_checkpoint.pt"):
+def load_diagnostic_backbone(device):
     print(f"[BACKBONE] Initializing DenseNet-121 on {device}...")
     model = xrv.models.DenseNet(weights="densenet121-res224-all")
-
-    local_scratch = "/tmp/samd_scratch"
-    os.makedirs(local_scratch, exist_ok=True)
-    local_ckpt = os.path.join(local_scratch, "best_backbone_checkpoint.pt")
-
-    print(f"[STORAGE] Checking for fine-tuned weights at {checkpoint_remote}...")
-    res = subprocess.run(["rclone", "copy", checkpoint_remote, local_scratch], capture_output=True, text=True)
     
-    if res.returncode == 0 and os.path.exists(local_ckpt):
+    checkpoint_remote = "mega_pool:best_backbone_checkpoint.pt"
+    local_scratch = "/tmp/best_backbone_checkpoint.pt"
+    
+    # Check if rclone executable is installed and configured
+    rclone_path = shutil.which("rclone")
+    if rclone_path is not None:
+        print(f"[STORAGE] Checking for fine-tuned weights at {checkpoint_remote}...")
         try:
-            checkpoint = torch.load(local_ckpt, map_location=device)
-            state_dict = checkpoint.get("model_state_dict", checkpoint)
-            model.load_state_dict(state_dict)
-            loss_val = checkpoint.get("final_loss", "N/A")
-            print(f"[WEIGHTS INJECTED] Successfully loaded fine-tuned checkpoint (loss: {loss_val})")
+            res = subprocess.run([rclone_path, "copy", checkpoint_remote, "/tmp/"], capture_output=True, text=True)
+            if res.returncode == 0 and os.path.exists(local_scratch):
+                print(f"[STORAGE] Injected fine-tuned checkpoint from {checkpoint_remote}")
+                state_dict = torch.load(local_scratch, map_location=device)
+                model.load_state_dict(state_dict, strict=False)
+            else:
+                print(f"[STORAGE] Remote checkpoint not found or rclone copy returned code {res.returncode}. Using baseline weights.")
         except Exception as e:
-            print(f"[WARNING] Failed to inject custom weights: {e}. Falling back to baseline.")
+            print(f"[STORAGE WARNING] Failed to copy remote checkpoint ({e}). Using baseline weights.")
     else:
-        print("[BASELINE WEIGHTS] Checkpoint not found in pool. Using stock TorchXRayVision weights.")
-
-    model = model.to(device)
+        print("[STORAGE] rclone executable not detected in PATH. Defaulting to baseline pretrained weights.")
+        
+    model.to(device)
     model.eval()
     return model
 
 def preprocess_xray(img_path: str, device):
-    img = skimage.io.imread(img_path)
-    img = xrv.datasets.normalize(img, 255)
-    
-    if len(img.shape) > 2:
-        img = img.mean(2)
-        
-    img = img[None, ...]
-    raw_img = img[0]
-    
-    img_tensor = torch.from_numpy(img).float()
-    transform = torch.nn.functional.interpolate(img_tensor.unsqueeze(0), size=(224, 224), mode="bilinear", align_corners=False)
-    img_tensor = transform.squeeze(0).to(device)
-    
-    return img_tensor, raw_img
+    raw_img = Image.open(img_path).convert("L")
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+    ])
+    tensor_img = transform(raw_img)
+    tensor_img = (tensor_img * 2048.0) - 1024.0
+    tensor_img = tensor_img.unsqueeze(0).to(device)
+    return tensor_img, raw_img
 
 def run_inference(model, input_tensor, pathologies):
     with torch.no_grad():
         preds = model(input_tensor)
-        preds = torch.sigmoid(preds)
-        
-    prob_dict = {path: float(preds[0][i].cpu().item()) for i, path in enumerate(pathologies)}
-    return prob_dict
+        probs = torch.sigmoid(preds).squeeze().cpu().numpy()
+    return {pathologies[i]: float(probs[i]) for i in range(len(pathologies))}
