@@ -1,0 +1,9 @@
+Clinical SaMD Safety Audit Report
+=============================================
+Layer 1 Organ Router Passed : True (Thoracic Pixels: 260113)
+Layer 2 UPS Status          : Bypassed (Unremarkable Scan: Score below threshold) (AAMR: 1.000)
+Layer 3 Epistemic Entropy   : 0.3349 bits (Ambiguous: 0)
+Layer 4 Interlocks Triggered:
+  * [HCE-01] RENAL CONTRAST LOCKOUT: eGFR: 24.5 mL/min, Cr: 2.3 mg/dL
+  * [HCE-02] COAGULOPATHY THROMBOLYSIS LOCKOUT: Platelets: 85000/uL, INR: 2.1
+  * [HCE-03] HEMODYNAMIC INSTABILITY TRIAGE LOCKOUT: SBP: 86 mmHg, Shock Index: 1.22, Lactate: 4.6 mmol/L
