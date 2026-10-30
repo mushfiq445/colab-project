@@ -3,6 +3,7 @@ import sys
 import csv
 import json
 import glob
+import urllib.request
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -17,42 +18,62 @@ from src.safety_engine import evaluate_epistemic_uncertainty, evaluate_contraind
 from src.storage_router import HybridStorageRouter
 
 def ensure_seed_assets(images_dir: str):
-    """Ensures a genuine benchmark seed scan and clinical sidecar exist using XRV sample dataset."""
+    """Ensures a genuine benchmark seed radiograph and clinical sidecar exist."""
     os.makedirs(images_dir, exist_ok=True)
     img_path = os.path.join(images_dir, "pneumonia.jpg")
     json_path = os.path.join(images_dir, "pneumonia_vitals.json")
 
-    # Force re-download if the previous file was a non-anatomical synthetic fallback
     needs_download = True
     if os.path.exists(img_path):
         try:
             with Image.open(img_path) as check_im:
-                # Check if it has genuine radiograph dimensions and dynamic range
                 if check_im.size[0] >= 224 and check_im.size[1] >= 224:
                     needs_download = False
         except Exception:
             needs_download = True
 
     if needs_download:
-        print(f"[FETCH SEED] Ingesting genuine NIH benchmark radiograph into {img_path}...")
+        print(f"[FETCH SEED] Ingesting genuine benchmark radiograph into {img_path}...")
+        extracted = False
+
+        # Method 1: Check torchxrayvision bundled sample test data
         try:
             import torchxrayvision as xrv
-            # Fetch official sample radiograph directly from torchxrayvision repository
-            img_sample = xrv.datasets.get_sample_data("nih")
-            img_arr = img_sample["img"]  # shape: (1, 1, H, W) or (1, H, W)
-            if img_arr.ndim == 4:
-                img_arr = img_arr[0, 0]
-            elif img_arr.ndim == 3:
-                img_arr = img_arr[0]
-            
-            # Normalize to standard 0-255 uint8 grayscale image
-            norm = (img_arr - img_arr.min()) / (img_arr.max() - img_arr.min() + 1e-8)
-            norm = (norm * 255.0).astype(np.uint8)
-            im = Image.fromarray(norm)
-            im.save(img_path)
-            print(f"[FETCH SEED] Genuine NIH radiograph saved successfully ({im.size}).")
+            xrv_dir = os.path.dirname(xrv.__file__)
+            candidate_samples = glob.glob(os.path.join(xrv_dir, "**", "*.png"), recursive=True) + \
+                                glob.glob(os.path.join(xrv_dir, "**", "*.jpg"), recursive=True)
+            for cand in candidate_samples:
+                if "test" in cand.lower() or "sample" in cand.lower() or "chest" in cand.lower():
+                    im = Image.open(cand).convert("L")
+                    im.save(img_path)
+                    print(f"[FETCH SEED] Bundled TorchXRayVision scan extracted from {cand}")
+                    extracted = True
+                    break
         except Exception as e:
-            print(f"[FETCH SEED ERROR] TorchXRayVision sample fetch failed: {e}")
+            print(f"[FETCH SEED NOTE] Bundled asset extraction skipped: {e}")
+
+        # Method 2: Download verified public domain NIH / ChestX-ray sample
+        if not extracted:
+            urls = [
+                "https://upload.wikimedia.org/wikipedia/commons/c/c8/Chest_Xray_PA_3-8-2010.png",
+                "https://raw.githubusercontent.com/mlmed/torchxrayvision/master/tests/test_xray.png"
+            ]
+            for url in urls:
+                try:
+                    print(f"[FETCH SEED] Downloading genuine radiograph from {url}...")
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req) as resp, open(img_path, 'wb') as out_f:
+                        out_f.write(resp.read())
+                    im = Image.open(img_path).convert("L")
+                    im.save(img_path)
+                    print(f"[FETCH SEED] Radiograph successfully saved ({im.size}).")
+                    extracted = True
+                    break
+                except Exception as err:
+                    print(f"[FETCH SEED] Download attempt failed for {url}: {err}")
+
+        if not extracted:
+            print("[ERROR] Could not extract or download a genuine chest radiograph.")
 
     if not os.path.exists(json_path):
         print(f"[SIDECAR INIT] Generating default clinical vitals sidecar -> {json_path}")
