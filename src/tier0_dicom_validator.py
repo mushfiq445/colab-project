@@ -76,7 +76,6 @@ EXTENDED_PHI_TAGS = (
     "PerformingPhysicianName",
     "OperatorsName",
 )
-# Values that indicate a tag has been scrubbed rather than populated with PHI.
 ANONYMIZED_PLACEHOLDERS = frozenset(
     {"", "ANONYMOUS", "ANONYMIZED", "ANONYMISED", "ANON", "REMOVED", "REDACTED",
      "DEIDENTIFIED", "DE-IDENTIFIED", "N/A", "NA", "NONE", "UNKNOWN", "XXX", "^"}
@@ -156,7 +155,6 @@ class DicomValidator:
         self.phi_policy = phi_policy
         self.audit_extended_phi = audit_extended_phi
 
-    # ------------------------------------------------------------------ #
     def validate(self, path: Union[str, Path]) -> DicomValidationResult:
         """Run the full M01 audit on ``path``; raises Tier0Error subclasses on failure."""
         file_path = Path(path)
@@ -173,7 +171,7 @@ class DicomValidator:
         photometric = self._check_photometric(ds)
         rows, cols = int(ds.Rows), int(ds.Columns)
 
-        raw = self._extract_pixels(ds, rows, cols)
+        raw = self._extract_pixels(ds, rows, cols, bits_stored, pixel_rep, ts_uid)
         self._check_stored_range(raw, bits_stored, pixel_rep)
         stored_min, stored_max = float(raw.min()), float(raw.max())
 
@@ -227,7 +225,6 @@ class DicomValidator:
         )
         return DicomValidationResult(pixel_array=image, report=report)
 
-    # ------------------------------------------------------------------ #
     @staticmethod
     def _read(path: Path) -> pydicom.dataset.FileDataset:
         try:
@@ -236,7 +233,7 @@ class DicomValidator:
             raise DicomIntegrityError(
                 STAGE, "INVALID_DICOM", f"Not a valid DICOM Part-10 file (missing preamble/'DICM' prefix): {exc}"
             ) from exc
-        except Exception as exc:  # truncated/corrupt header
+        except Exception as exc:
             raise DicomIntegrityError(STAGE, "HEADER_READ_FAILED", f"Failed to parse DICOM header: {exc!r}") from exc
 
     def _check_transfer_syntax(self, ds: Any, warnings: List[str]) -> "tuple[str, str, bool]":
@@ -320,14 +317,32 @@ class DicomValidator:
         return photometric
 
     @staticmethod
-    def _extract_pixels(ds: Any, rows: int, cols: int) -> np.ndarray:
+    def _extract_pixels(
+        ds: Any, rows: int, cols: int, bits_stored: int, pixel_rep: int, ts_uid: str
+    ) -> np.ndarray:
+        if ts_uid in UNCOMPRESSED_TRANSFER_SYNTAXES:
+            try:
+                raw_bytes = ds.PixelData
+                dtype = np.int16 if pixel_rep == 1 else np.uint16
+                raw_unmasked = np.frombuffer(raw_bytes, dtype=dtype)
+                if raw_unmasked.size == rows * cols:
+                    DicomValidator._check_stored_range(raw_unmasked, bits_stored, pixel_rep)
+            except DicomIntegrityError:
+                raise
+            except Exception as exc:
+                raise DicomIntegrityError(
+                    STAGE, "PIXEL_DECODE_FAILED",
+                    f"Failed to read raw PixelData buffer: {exc!r}",
+                ) from exc
+
         try:
             arr = np.asarray(ds.pixel_array)
         except Exception as exc:
             raise DicomIntegrityError(
                 STAGE, "PIXEL_DECODE_FAILED",
-                f"Pixel data could not be decoded (truncated buffer, corrupt stream or missing codec plugin): {exc!r}",
+                f"Pixel data could not be decoded: {exc!r}",
             ) from exc
+
         if arr.ndim != 2 or arr.shape != (rows, cols):
             raise DicomIntegrityError(
                 STAGE, "PIXEL_SHAPE_MISMATCH", f"Decoded pixel array shape {arr.shape} != header (Rows, Columns)=({rows}, {cols})."

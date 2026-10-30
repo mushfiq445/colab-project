@@ -36,24 +36,20 @@ try:
     from pydicom.uid import ExplicitVRLittleEndian, generate_uid
     from src.tier0_dicom_validator import DicomValidator
     HAVE_PYDICOM = True
-except ImportError:  # pragma: no cover
+except ImportError:
     HAVE_PYDICOM = False
 
 try:
     import torch
     from src.router import execute_tier0_precheck
     HAVE_ROUTER = HAVE_PYDICOM
-except ImportError:  # pragma: no cover
+except ImportError:
     HAVE_ROUTER = False
 
 FS = 500
 
 
-# --------------------------------------------------------------------------- #
-# Synthetic fixtures
-# --------------------------------------------------------------------------- #
 def chest_like(n: int = 512, seed: int = 0) -> np.ndarray:
-    """Radiograph-like image (0..1, higher == denser): bilateral lucent lungs in the upper half."""
     rng = np.random.default_rng(seed)
     yy, xx = np.mgrid[0:n, 0:n] / n
     img = np.full((n, n), 0.62)
@@ -64,7 +60,6 @@ def chest_like(n: int = 512, seed: int = 0) -> np.ndarray:
 
 
 def abdomen_like(n: int = 512, seed: int = 0) -> np.ndarray:
-    """Dense upper half (liver/diaphragm) with lucent bowel-gas pockets in the lower half."""
     rng = np.random.default_rng(seed)
     yy, xx = np.mgrid[0:n, 0:n] / n
     img = np.full((n, n), 0.60)
@@ -75,7 +70,6 @@ def abdomen_like(n: int = 512, seed: int = 0) -> np.ndarray:
 
 
 def synthetic_ecg(duration_s: float = 10.0, noise_sd: float = 0.01, hr: float = 72.0, seed: int = 0) -> np.ndarray:
-    """12-lead PQRST waveform, shape (12, n), mV, 500 Hz."""
     rng = np.random.default_rng(seed)
     t = np.arange(int(duration_s * FS)) / FS
     sig = np.zeros_like(t)
@@ -91,8 +85,6 @@ def synthetic_ecg(duration_s: float = 10.0, noise_sd: float = 0.01, hr: float = 
 
 
 class GeometricSegmentationEngine:
-    """Deterministic test backend: emits masks with exact, caller-chosen pixel counts."""
-
     def __init__(self, left: int, right: int, heart: int) -> None:
         self.counts = {"Left Lung": left, "Right Lung": right, "Heart": heart}
         self.offsets = {"Left Lung": 0, "Right Lung": 100_000, "Heart": 200_000}
@@ -152,9 +144,6 @@ def to_counts(img01: np.ndarray, bits: int) -> np.ndarray:
     return np.round(img01 * ((1 << bits) - 1)).astype(np.uint16)
 
 
-# --------------------------------------------------------------------------- #
-# M01
-# --------------------------------------------------------------------------- #
 @unittest.skipUnless(HAVE_PYDICOM, "pydicom not installed")
 class TestM01DicomValidator(unittest.TestCase):
     def setUp(self) -> None:
@@ -183,8 +172,9 @@ class TestM01DicomValidator(unittest.TestCase):
 
     def test_pixel_range_violation(self) -> None:
         px = to_counts(chest_like(64), 12)
-        px[0, 0] = 5000  # > 4095
-        path = write_dicom(self.dir / "range.dcm", px, bits_stored=12)
+        px_bad = px.astype(np.uint16)
+        px_bad[0, 0] = 5000
+        path = write_dicom(self.dir / "range.dcm", px_bad, bits_stored=12)
         with self.assertRaises(DicomIntegrityError) as ctx:
             self.validator.validate(path)
         self.assertEqual(ctx.exception.code, "PIXEL_RANGE_VIOLATION")
@@ -268,9 +258,6 @@ class TestM01DicomValidator(unittest.TestCase):
             self.validator.validate(self.dir / "nope.dcm")
 
 
-# --------------------------------------------------------------------------- #
-# M02
-# --------------------------------------------------------------------------- #
 class TestM02ThoraxRouter(unittest.TestCase):
     def setUp(self) -> None:
         self.image = chest_like(512).astype(np.float32)
@@ -312,9 +299,6 @@ class TestM02ThoraxRouter(unittest.TestCase):
         self.assertEqual(res.metadata_body_part, "THORAX")
 
 
-# --------------------------------------------------------------------------- #
-# M03
-# --------------------------------------------------------------------------- #
 class TestM03AbdomenRouter(unittest.TestCase):
     def test_chest_passes(self) -> None:
         res = AbdomenRouter().enforce(chest_like(512))
@@ -349,9 +333,6 @@ class TestM03AbdomenRouter(unittest.TestCase):
             AbdomenRouter().assess(bad)
 
 
-# --------------------------------------------------------------------------- #
-# M04
-# --------------------------------------------------------------------------- #
 class TestM04BiosignalGate(unittest.TestCase):
     def setUp(self) -> None:
         self.gate = BiosignalGate()
@@ -375,14 +356,14 @@ class TestM04BiosignalGate(unittest.TestCase):
 
     def test_near_flatline_below_ptp_threshold(self) -> None:
         rng = np.random.default_rng(1)
-        ecg = rng.normal(0, 0.003, (12, 10 * FS))  # ptp ~ 0.02 mV < 0.05 mV
+        ecg = rng.normal(0, 0.003, (12, 10 * FS))
         res = self.gate.evaluate(ecg)
         self.assertFalse(res.passed)
         self.assertTrue(all("FLATLINE" in l.reasons and "DISCONNECTED" not in l.reasons for l in res.leads))
 
     def test_ptp_just_above_threshold_not_flatline(self) -> None:
         ecg = synthetic_ecg(noise_sd=0.0)
-        ecg[6] = 0.06 * np.sin(2 * np.pi * 1.2 * np.arange(ecg.shape[1]) / FS)  # ptp = 0.12 mV
+        ecg[6] = 0.06 * np.sin(2 * np.pi * 1.2 * np.arange(ecg.shape[1]) / FS)
         res = self.gate.evaluate(ecg)
         self.assertNotIn("FLATLINE", res.leads[6].reasons)
 
@@ -405,7 +386,7 @@ class TestM04BiosignalGate(unittest.TestCase):
 
     def test_disconnected_lead(self) -> None:
         ecg = synthetic_ecg()
-        ecg[4] = 0.5  # lead-off: constant value
+        ecg[4] = 0.5
         res = self.gate.evaluate(ecg)
         self.assertFalse(res.passed)
         self.assertIn("DISCONNECTED", res.leads[4].reasons)
@@ -439,9 +420,6 @@ class TestM04BiosignalGate(unittest.TestCase):
                 load_ecg(Path(d) / "missing.npy")
 
 
-# --------------------------------------------------------------------------- #
-# Orchestrator integration
-# --------------------------------------------------------------------------- #
 @unittest.skipUnless(HAVE_ROUTER, "pydicom/torch not installed")
 class TestOrchestratorIntegration(unittest.TestCase):
     def setUp(self) -> None:
