@@ -1,1 +1,3 @@
 __pycache__/
+audit_logs/
+*.json
