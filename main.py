@@ -1,6 +1,7 @@
 import os
 import sys
 import csv
+import json
 import glob
 import torch
 import numpy as np
@@ -10,8 +11,26 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.router import load_pspnet_segmenter, segment_thoracic_anatomy, validate_two_factor_organ
 from src.inference import load_diagnostic_backbone, preprocess_xray, run_inference
-from src.explainability import evaluate_ups_gate, compute_gradcam
+from src.explainability import evaluate_ups_gate
 from src.safety_engine import evaluate_epistemic_uncertainty, evaluate_contraindications
+
+def load_patient_clinical_profile(json_path: str):
+    default_vitals = {"HeartRate": 75, "SystolicBP": 120}
+    default_labs = {"eGFR": 90.0, "Creatinine": 0.9, "Platelets": 250000, "INR": 1.0, "Lactate": 1.1}
+    
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, "r") as f:
+                data = json.load(f)
+            vitals = data.get("vitals", default_vitals)
+            labs = data.get("labs", default_labs)
+            print(f"[SIDECAR LOADED] Clinical profile ingested from {os.path.basename(json_path)}")
+            return vitals, labs
+        except Exception as e:
+            print(f"[WARNING] Failed to parse {json_path}: {e}. Falling back to baseline.")
+    
+    print("[DEFAULT PROFILE] Using baseline standard vitals/labs.")
+    return default_vitals, default_labs
 
 def save_gradcam_overlay(attr_map, raw_img, output_path):
     if attr_map is None:
@@ -67,7 +86,7 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
     for k, v in sorted_preds[:5]:
         print(f"{k:<25}: {v:.4f}")
 
-    # --- LAYER 2: UPS Gate & Heatmap Persistence ---
+    # --- LAYER 2: UPS Gate ---
     target_layer = backbone_model.features.denseblock4.denselayer16.conv2
     attr_map, aamr, ups_status = evaluate_ups_gate(
         backbone_model, target_layer, input_tensor, top_class_idx,
@@ -77,9 +96,8 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
     record["l2_ups_status"] = ups_status
     record["aamr"] = round(float(aamr), 3)
 
-    # Save Grad-CAM image directly to Drive
     if attr_map is not None:
-        heatmap_path = os.path.join(output_dir, f"gradcam_{top_pathology.lower()}.png")
+        heatmap_path = os.path.join(output_dir, f"gradcam_{scan_id}_{top_pathology.lower()}.png")
         save_gradcam_overlay(attr_map, raw_img, heatmap_path)
         print(f"[SAVED] Grad-CAM heatmap -> {heatmap_path}")
 
@@ -89,10 +107,10 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
     record["l3_entropy"] = round(float(entropy), 4)
     record["l3_ambiguous_count"] = ambig_count
 
-    # --- LAYER 4: Clinical Contraindications ---
-    patient_vitals = {"HeartRate": 105, "SystolicBP": 86}
-    patient_labs = {"eGFR": 24.5, "Creatinine": 2.3, "Platelets": 85000, "INR": 2.1, "Lactate": 4.6}
-    l4_passed, interlocks = evaluate_contraindications(patient_vitals, patient_labs)
+    # --- LAYER 4: Dynamic Sidecar Vitals & Contraindications ---
+    sidecar_json = os.path.splitext(img_path)[0] + "_vitals.json"
+    vitals, labs = load_patient_clinical_profile(sidecar_json)
+    l4_passed, interlocks = evaluate_contraindications(vitals, labs)
     record["l4_vetoes"] = "; ".join(interlocks) if interlocks else "None"
 
     # --- DISPOSITION ---
@@ -103,10 +121,11 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
     else:
         record["final_disposition"] = "FLAGGED_FOR_AUDIT"
 
-    # Save detailed scan report to Drive
+    # Save individual scan report
     scan_report = os.path.join(output_dir, f"{scan_id}_audit.txt")
     with open(scan_report, "w") as f:
         f.write(f"SaMD Clinical Safety Audit: {scan_id}\n" + "=" * 45 + "\n")
+        f.write(f"Disposition: {record["final_disposition"]}\n")
         f.write(f"Top Finding: {top_pathology} ({top_score:.4f})\n")
         f.write(f"Layer 1 Organ Pass: {l1_pass} ({thoracic_pixels} px)\n")
         f.write(f"Layer 2 UPS Status: {ups_status} (AAMR: {aamr:.3f})\n")
@@ -119,9 +138,8 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"[SYSTEM INITIALIZATION] Batch Runner on {device}")
+    print(f"[SYSTEM INITIALIZATION] Dynamic Batch Runner on {device}")
 
-    # Primary output target is Google Drive
     drive_base = "/content/drive/MyDrive/XRay_Predictions"
     output_dir = drive_base if os.path.exists(drive_base) else "audit_logs"
     images_dir = os.path.join(output_dir, "images")
@@ -148,7 +166,6 @@ def main():
         record = process_single_scan(img_p, segmenter, backbone, device, output_dir)
         manifest_records.append(record)
 
-    # Save audit_manifest.csv directly into Google Drive
     csv_path = os.path.join(output_dir, "audit_manifest.csv")
     fields = [
         "scan_id", "l1_organ_pass", "thoracic_pixels", "top_finding",
