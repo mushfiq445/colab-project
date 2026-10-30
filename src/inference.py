@@ -17,15 +17,17 @@ def preprocess_xray(image_path: str, device: torch.device):
     if len(img.shape) > 2:
         img = img.mean(axis=2)
 
+    img = img[np.newaxis, :, :]
+
     transform = transforms.Compose([
         xrv.datasets.XRayCenterCrop(),
         xrv.datasets.XRayResizer(224)
     ])
     img = transform(img)
 
-    tensor = torch.from_numpy(img).unsqueeze(0).unsqueeze(0).float().to(device)
+    tensor = torch.from_numpy(img).unsqueeze(0).float().to(device)
     tensor.requires_grad = True
-    return tensor, img
+    return tensor, img.squeeze()
 
 def run_inference(model, tensor: torch.Tensor, pathologies: list):
     with torch.no_grad():
