@@ -1,16 +1,19 @@
-import torch
 import numpy as np
-import skimage.io
-import torchvision.transforms as transforms
-import torchxrayvision as xrv
 
-def load_pspnet_segmenter(device: torch.device):
+def load_pspnet_segmenter(device):
+    import torch
+    import torchxrayvision as xrv
     model = xrv.baseline_models.chestx_det.PSPNet()
     model = model.to(device)
     model.eval()
     return model
 
-def segment_thoracic_anatomy(image_path: str, segmenter_model, device: torch.device):
+def segment_thoracic_anatomy(image_path: str, segmenter_model, device):
+    import torch
+    import skimage.io
+    import torchvision.transforms as transforms
+    import torchxrayvision as xrv
+
     img = skimage.io.imread(image_path)
     img = xrv.datasets.normalize(img, 255)
 
