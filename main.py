@@ -13,6 +13,7 @@ from src.router import load_pspnet_segmenter, segment_thoracic_anatomy, validate
 from src.inference import load_diagnostic_backbone, preprocess_xray, run_inference
 from src.explainability import evaluate_ups_gate
 from src.safety_engine import evaluate_epistemic_uncertainty, evaluate_contraindications
+from src.storage_router import HybridStorageRouter
 
 def load_patient_clinical_profile(json_path: str):
     default_vitals = {"HeartRate": 75, "SystolicBP": 120}
@@ -43,7 +44,7 @@ def save_gradcam_overlay(attr_map, raw_img, output_path):
     plt.savefig(output_path, bbox_inches="tight", pad_inches=0)
     plt.close()
 
-def process_single_scan(img_path: str, segmenter, backbone_model, device, output_dir: str):
+def process_single_scan(img_path: str, segmenter, backbone_model, device, output_dir: str, router: HybridStorageRouter):
     scan_id = os.path.splitext(os.path.basename(img_path))[0]
     print(f"\n=================== PROCESSING SCAN: {scan_id} ===================")
     
@@ -99,7 +100,8 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
     if attr_map is not None:
         heatmap_path = os.path.join(output_dir, f"gradcam_{scan_id}_{top_pathology.lower()}.png")
         save_gradcam_overlay(attr_map, raw_img, heatmap_path)
-        print(f"[SAVED] Grad-CAM heatmap -> {heatmap_path}")
+        print(f"[LOCAL] Saved Grad-CAM overlay -> {heatmap_path}")
+        router.route_file(heatmap_path)
 
     # --- LAYER 3: Epistemic Uncertainty Gate ---
     prob_array = np.array(list(predictions.values()))
@@ -121,7 +123,7 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
     else:
         record["final_disposition"] = "FLAGGED_FOR_AUDIT"
 
-    # Save individual scan report
+    # Save scan-level text report and route it
     scan_report = os.path.join(output_dir, f"{scan_id}_audit.txt")
     with open(scan_report, "w") as f:
         f.write(f"SaMD Clinical Safety Audit: {scan_id}\n" + "=" * 45 + "\n")
@@ -134,11 +136,14 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
         for i in interlocks:
             f.write(f"  * {i}\n")
 
+    router.route_file(scan_report)
     return record
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[SYSTEM INITIALIZATION] Dynamic Batch Runner on {device}")
+
+    router = HybridStorageRouter()
 
     drive_base = "/content/drive/MyDrive/XRay_Predictions"
     output_dir = drive_base if os.path.exists(drive_base) else "audit_logs"
@@ -163,7 +168,7 @@ def main():
 
     manifest_records = []
     for img_p in sorted(image_paths):
-        record = process_single_scan(img_p, segmenter, backbone, device, output_dir)
+        record = process_single_scan(img_p, segmenter, backbone, device, output_dir, router)
         manifest_records.append(record)
 
     csv_path = os.path.join(output_dir, "audit_manifest.csv")
@@ -178,7 +183,7 @@ def main():
         writer.writerows(manifest_records)
 
     print(f"\n[BATCH COMPLETE] Processed {len(manifest_records)} scan(s).")
-    print(f"[DRIVE PERSISTED] Manifest saved -> {csv_path}")
+    router.route_file(csv_path)
 
 if __name__ == "__main__":
     main()
