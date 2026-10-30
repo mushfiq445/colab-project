@@ -1,5 +1,7 @@
 import os
 import sys
+import csv
+import glob
 import torch
 import numpy as np
 
@@ -10,102 +12,138 @@ from src.inference import load_diagnostic_backbone, preprocess_xray, run_inferen
 from src.explainability import evaluate_ups_gate
 from src.safety_engine import evaluate_epistemic_uncertainty, evaluate_contraindications
 
-def main():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"[SYSTEM INITIALIZATION] Running on {device}")
+def process_single_scan(img_path: str, segmenter, backbone_model, device, output_dir: str):
+    scan_id = os.path.splitext(os.path.basename(img_path))[0]
+    print(f"\n=================== PROCESSING SCAN: {scan_id} ===================")
+    
+    record = {
+        "scan_id": scan_id,
+        "l1_organ_pass": False,
+        "thoracic_pixels": 0,
+        "top_finding": "None",
+        "top_score": 0.0,
+        "l2_ups_status": "N/A",
+        "aamr": 0.0,
+        "l3_entropy": 0.0,
+        "l3_ambiguous_count": 0,
+        "l4_vetoes": "None",
+        "final_disposition": "REJECTED"
+    }
 
-    drive_dir = "/content/drive/MyDrive/XRay_Predictions"
-    img_path = os.path.join(drive_dir, "images", "pneumonia.jpg")
-
-    if not os.path.exists(img_path) and os.path.exists("test_image.jpg"):
-        img_path = "test_image.jpg"
-        drive_dir = "audit_logs"
-
-    os.makedirs(drive_dir, exist_ok=True)
-    os.makedirs("audit_logs", exist_ok=True)
-
-    pred_file = os.path.join(drive_dir, "predictions.txt")
-    audit_file = os.path.join(drive_dir, "safety_audit.txt")
-    local_audit = os.path.join("audit_logs", "safety_audit.txt")
-    local_preds = os.path.join("audit_logs", "predictions.txt")
-
-    if not os.path.exists(img_path):
-        print(f"[ERROR] Target image missing at {img_path}.")
-        return
-
-    # --- LAYER 1: Organ Router (Native 512x512 PSPNet) ---
-    print("\n--- SECTION 5.2: TWO-FACTOR ORGAN ROUTING CHECK ---")
-    segmenter = load_pspnet_segmenter(device)
+    # --- LAYER 1: Organ Router ---
     lung_mask, thoracic_pixels = segment_thoracic_anatomy(img_path, segmenter, device)
+    record["thoracic_pixels"] = thoracic_pixels
+    l1_pass = validate_two_factor_organ("CHEST", thoracic_pixels)
+    record["l1_organ_pass"] = l1_pass
 
-    if not validate_two_factor_organ("CHEST", thoracic_pixels):
-        print("[ABORT] Pipeline halted by Layer 1 Organ Router.")
-        return
+    if not l1_pass:
+        print(f"[REJECT] Scan {scan_id} aborted by Layer 1 Organ Router.")
+        return record
 
-    # --- DIAGNOSTIC BACKBONE (DenseNet-121) ---
-    print("\n--- RUNNING DIAGNOSTIC INFERENCE ---")
-    model = load_diagnostic_backbone(device)
+    # --- DIAGNOSTIC BACKBONE ---
     input_tensor, _ = preprocess_xray(img_path, device)
-    pathologies = model.pathologies
-    predictions = run_inference(model, input_tensor, pathologies)
+    pathologies = backbone_model.pathologies
+    predictions = run_inference(backbone_model, input_tensor, pathologies)
 
     sorted_preds = sorted(predictions.items(), key=lambda x: x[1], reverse=True)
     top_pathology, top_score = sorted_preds[0]
     top_class_idx = pathologies.index(top_pathology)
-
-    for k, v in sorted_preds:
-        print(f"{k:<25}: {v:.4f}")
+    
+    record["top_finding"] = top_pathology
+    record["top_score"] = round(float(top_score), 4)
 
     # --- LAYER 2: UPS Gate ---
-    print("\n--- SECTION 5.3: EXPLAINABILITY (GRAD-CAM) & UPS GATE ---")
-    target_layer = model.features.denseblock4.denselayer16.conv2
+    target_layer = backbone_model.features.denseblock4.denselayer16.conv2
     _, aamr, ups_status = evaluate_ups_gate(
-        model, target_layer, input_tensor, top_class_idx,
+        backbone_model, target_layer, input_tensor, top_class_idx,
         lung_mask, diagnostic_threshold=0.50,
         aamr_threshold=0.85, top_score=top_score
     )
-    print(f"[SAFETY GATE] Layer 2 UPS -> {ups_status}")
+    record["l2_ups_status"] = ups_status
+    record["aamr"] = round(float(aamr), 3)
 
     # --- LAYER 3: Epistemic Uncertainty Gate ---
-    print("\n--- SECTION 5.4: EPISTEMIC UNCERTAINTY & ENTROPY GATE ---")
     prob_array = np.array(list(predictions.values()))
     l3_passed, entropy, ambig_count, _ = evaluate_epistemic_uncertainty(prob_array)
-    print(f"Mean Predictive Entropy: {entropy:.4f} bits | Ambiguous Findings: {ambig_count}")
+    record["l3_entropy"] = round(float(entropy), 4)
+    record["l3_ambiguous_count"] = ambig_count
 
-    # --- LAYER 4: Hardcoded Contraindication Engine (HCE) ---
-    print("\n--- SECTION 5.5: HARDCODED CONTRAINDICATION INTERLOCKS ---")
+    # --- LAYER 4: Clinical Contraindications ---
+    # Default patient profile for triage demonstration
     patient_vitals = {"HeartRate": 105, "SystolicBP": 86}
     patient_labs = {"eGFR": 24.5, "Creatinine": 2.3, "Platelets": 85000, "INR": 2.1, "Lactate": 4.6}
-    _, interlocks = evaluate_contraindications(patient_vitals, patient_labs)
-    for alert in interlocks:
-        print(f"[VETO] {alert}")
+    l4_passed, interlocks = evaluate_contraindications(patient_vitals, patient_labs)
+    record["l4_vetoes"] = "; ".join(interlocks) if interlocks else "None"
 
-    # --- PERSISTENCE ---
-    pred_content = "Thoracic Diagnostic Predictions (18 Classes):\n" + "=" * 45 + "\n"
-    for k, v in sorted_preds:
-        pred_content += f"{k:<25}: {v:.4f}\n"
+    # --- DISPOSITION DETERMINATION ---
+    if l1_pass and ("REJECTED" not in ups_status) and l3_passed and l4_passed:
+        record["final_disposition"] = "CLEARED_FOR_REVIEW"
+    elif not l4_passed:
+        record["final_disposition"] = "HELD_BY_CONTRAINDICATION"
+    else:
+        record["final_disposition"] = "FLAGGED_FOR_AUDIT"
 
-    audit_lines = [
-        "Clinical SaMD Safety Audit Report",
-        "=" * 45,
-        f"Layer 1 Organ Router Passed : True (Thoracic Pixels: {thoracic_pixels})",
-        f"Layer 2 UPS Status          : {ups_status} (AAMR: {aamr:.3f})",
-        f"Layer 3 Epistemic Entropy   : {entropy:.4f} bits (Ambiguous: {ambig_count})",
-        "Layer 4 Interlocks Triggered:"
+    # Save detailed scan report
+    scan_report = os.path.join(output_dir, f"{scan_id}_audit.txt")
+    with open(scan_report, "w") as f:
+        f.write(f"SaMD Clinical Safety Audit: {scan_id}\n" + "=" * 45 + "\n")
+        f.write(f"Top Finding: {top_pathology} ({top_score:.4f})\n")
+        f.write(f"Layer 1 Organ Pass: {l1_pass} ({thoracic_pixels} px)\n")
+        f.write(f"Layer 2 UPS Status: {ups_status} (AAMR: {aamr:.3f})\n")
+        f.write(f"Layer 3 Entropy: {entropy:.4f} bits (Ambiguous: {ambig_count})\n")
+        f.write("Layer 4 Interlocks:\n")
+        for i in interlocks:
+            f.write(f"  * {i}\n")
+
+    return record
+
+def main():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"[SYSTEM INITIALIZATION] Batch Runner on {device}")
+
+    base_dir = "/content/drive/MyDrive/XRay_Predictions"
+    if not os.path.exists(base_dir):
+        base_dir = "audit_logs"
+
+    images_dir = os.path.join(base_dir, "images") if os.path.exists(os.path.join(base_dir, "images")) else base_dir
+    output_dir = base_dir
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Collect images
+    extensions = ("*.jpg", "*.jpeg", "*.png")
+    image_paths = []
+    for ext in extensions:
+        image_paths.extend(glob.glob(os.path.join(images_dir, ext)))
+
+    if not image_paths:
+        print(f"[ERROR] No scan images found in {images_dir}")
+        return
+
+    print(f"Discovered {len(image_paths)} scan(s) in {images_dir}")
+
+    # Load shared models once
+    segmenter = load_pspnet_segmenter(device)
+    backbone = load_diagnostic_backbone(device)
+
+    manifest_records = []
+    for img_p in sorted(image_paths):
+        record = process_single_scan(img_p, segmenter, backbone, device, output_dir)
+        manifest_records.append(record)
+
+    # Export audit_manifest.csv
+    csv_path = os.path.join(output_dir, "audit_manifest.csv")
+    fields = [
+        "scan_id", "l1_organ_pass", "thoracic_pixels", "top_finding",
+        "top_score", "l2_ups_status", "aamr", "l3_entropy",
+        "l3_ambiguous_count", "l4_vetoes", "final_disposition"
     ]
-    for alert in interlocks:
-        audit_lines.append(f"  * {alert}")
-    audit_content = "\n".join(audit_lines) + "\n"
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(manifest_records)
 
-    for p_path in [pred_file, local_preds]:
-        with open(p_path, "w") as f:
-            f.write(pred_content)
-
-    for a_path in [audit_file, local_audit]:
-        with open(a_path, "w") as f:
-            f.write(audit_content)
-
-    print(f"\n[OK] Pipeline audit recorded successfully.")
+    print(f"\n[BATCH COMPLETE] Processed {len(manifest_records)} scan(s).")
+    print(f"Clinical Manifest written to: {csv_path}")
 
 if __name__ == "__main__":
     main()
