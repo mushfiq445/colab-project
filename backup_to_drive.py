@@ -1,8 +1,5 @@
 import os
 import shutil
-from google.colab import drive
-
-drive.mount('/content/drive', force_remount=False)
 
 gdrive_dest = '/content/drive/MyDrive/XRay_Predictions'
 os.makedirs(f"{gdrive_dest}/audit_logs", exist_ok=True)
