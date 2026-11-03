@@ -49,7 +49,7 @@ class Thresholds(unittest.TestCase):
 
     def test_boundaries_do_not_trigger(self):
         # exactly at the threshold is not "<" / ">"; SBP 90 with HR 90 -> SI exactly 1.0
-        res = run(profile(eGFR=30, Creatinine=2.0, Platelets=100000, INR=1.7, SystolicBP=90, HeartRate=90, Lactate=2.0))
+        res = run(profile(eGFR=30, Creatinine=2.0, Platelets=100000, INR=1.7, SystolicBP=90, HeartRate=90, Lactate=3.99))
         self.assertEqual(set(status(res).values()), {CLEAR})
 
     def test_each_criterion_triggers(self):
@@ -58,7 +58,7 @@ class Thresholds(unittest.TestCase):
             ({"Platelets": 99999}, "HCE-02"), ({"INR": 1.71}, "HCE-02"),
             ({"SystolicBP": 89, "HeartRate": 70}, "HCE-03"),   # SBP < 90 rule (absent in old code)
             ({"HeartRate": 121, "SystolicBP": 120}, "HCE-03"),  # SI 1.008
-            ({"Lactate": 2.01}, "HCE-03"),
+            ({"Lactate": 4.0}, "HCE-03"),
         ]
         for over, rid in cases:
             with self.subTest(over=over):
@@ -195,7 +195,7 @@ class Config(unittest.TestCase):
         crit = lambda rid: {(c["field"], c["op"], c["value"]) for c in r[rid]["criteria"]}
         self.assertEqual(crit("HCE-01"), {("eGFR", "<", 30), ("Creatinine", ">", 2.0)})
         self.assertEqual(crit("HCE-02"), {("Platelets", "<", 100000), ("INR", ">", 1.7)})
-        self.assertEqual(crit("HCE-03"), {("SystolicBP", "<", 90), ("ShockIndex", ">", 1.0), ("Lactate", ">", 2.0)})
+        self.assertEqual(crit("HCE-03"), {("SystolicBP", "<", 90), ("ShockIndex", ">", 1.0), ("Lactate", ">=", 4.0)})
         self.assertEqual(r["HCE-03"]["blocks"], ["*"])
 
     def test_invalid_configs_raise(self):

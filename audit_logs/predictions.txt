@@ -1,0 +1,20 @@
+Thoracic Diagnostic Predictions (18 Classes):
+=============================================
+Fibrosis                 : 0.3425
+Pleural_Thickening       : 0.2635
+Consolidation            : 0.2553
+Infiltration             : 0.2102
+Mass                     : 0.1446
+Nodule                   : 0.1205
+Lung Opacity             : 0.0857
+Atelectasis              : 0.0400
+Pneumothorax             : 0.0357
+Emphysema                : 0.0318
+Effusion                 : 0.0263
+Enlarged Cardiomediastinum: 0.0204
+Fracture                 : 0.0118
+Hernia                   : 0.0045
+Cardiomegaly             : 0.0023
+Pneumonia                : 0.0008
+Edema                    : 0.0002
+Lung Lesion              : 0.0001

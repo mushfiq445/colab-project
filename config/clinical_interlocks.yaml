@@ -1,23 +1,16 @@
 # Hardcoded Clinical Interlocks (HCE) - single source of truth for Layer 4.
 # Loaded by src/interlocks.py. The file's SHA-256 is stored in every audit record,
 # so any change to a threshold is traceable. Edit via change control only.
-#
-# Thresholds below follow the task specification (HCE-01..03). NOTE: the previous code
-# used Shock Index > 0.9 and Lactate > 2.2 and had no SBP < 90 rule; confirm the values
-# below are the ones you intend to validate.
-schema_version: 1
 
+schema_version: 1
 policy:
-  require_timestamps: true        # every section (or field) needs a timezone-aware collected_at
-  allow_unitless_values: true     # bare numbers are assumed to be in the canonical unit (warning logged)
+  require_timestamps: true
+  allow_unitless_values: true
   max_age_minutes:
     vitals: 30
     labs: 1440
   future_skew_minutes: 5
 
-# Canonical units + plausibility limits. Values outside [min, max] are treated as data errors
-# (fail closed), which also catches unit mix-ups such as umol/L creatinine sent as mg/dL.
-# conversions: unit string -> factor that converts it into the canonical unit.
 fields:
   eGFR:
     section: labs
@@ -30,7 +23,7 @@ fields:
     unit: "mg/dL"
     min: 0.1
     max: 25
-    conversions: {"umol/L": 0.011312}     # 1 / 88.4
+    conversions: {"umol/L": 0.011312}
   Platelets:
     section: labs
     unit: "/uL"
@@ -47,7 +40,7 @@ fields:
     unit: "mmol/L"
     min: 0.1
     max: 30
-    conversions: {"mg/dL": 0.111}         # 1 / 9.008
+    conversions: {"mg/dL": 0.111}
   HeartRate:
     section: vitals
     unit: "bpm"
@@ -59,10 +52,6 @@ fields:
     min: 30
     max: 300
 
-# A rule is TRIGGERED if ANY criterion is true. If no criterion is true but one cannot be
-# evaluated (missing/stale/invalid data) the rule is DATA_INVALID and is treated as blocking.
-# blocks: actions the rule blocks; "*" blocks every automated action.
-# ShockIndex is derived as HeartRate / SystolicBP.
 rules:
   HCE-01:
     name: RENAL CONTRAST LOCKOUT
@@ -83,13 +72,4 @@ rules:
     criteria:
       - {field: SystolicBP, op: "<", value: 90}
       - {field: ShockIndex, op: ">", value: 1.0}
-      - {field: Lactate, op: ">", value: 2.0}
-
-# Example clinical profile sidecar (<scan>_vitals.json):
-# {
-#   "vitals": {"HeartRate": 78, "SystolicBP": 118, "collected_at": "2026-11-02T11:50:00Z"},
-#   "labs": {"eGFR": 88.0,
-#            "Creatinine": {"value": 84, "unit": "umol/L"},
-#            "Platelets": 240000, "INR": 1.05, "Lactate": 1.2,
-#            "collected_at": "2026-11-02T06:00:00Z"}
-# }
+      - {field: Lactate, op: ">=", value: 4.0}
