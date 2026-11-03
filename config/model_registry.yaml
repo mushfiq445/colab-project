@@ -1,0 +1,45 @@
+# Authoritative Model Checkpoint Registry (Issue R3 / Rule 2 & Rule 8).
+# Every model loaded by src/inference.py must be registered here.
+# Not clinically validated; SOUP baseline for research/triage prototyping only.
+
+schema_version: 1
+
+models:
+  densenet121-res224-all:
+    architecture: "torchxrayvision.models.DenseNet"
+    weights_id: "densenet121-res224-all"
+    input_resolution: [224, 224]
+    input_range: [-1024.0, 1024.0]
+    strict_loading: true
+    weights_only: true
+    # Pinned state_dict SHA-256 for torchxrayvision v1 densenet121-res224-all.
+    # If custom fine-tuned weights are registered, their exact file SHA-256 is required.
+    expected_state_sha256: null
+    allow_official_xrv_pretrained: true
+    training_cohorts:
+      - "NIH ChestX-ray14"
+      - "CheXpert"
+      - "MIMIC-CXR"
+      - "PadChest"
+      - "OpenI"
+      - "RSNA Pneumonia"
+    validation_status: "UNVALIDATED_SOUP_BASELINE"
+    pathologies:
+      - "Atelectasis"
+      - "Consolidation"
+      - "Infiltration"
+      - "Pneumothorax"
+      - "Edema"
+      - "Emphysema"
+      - "Fibrosis"
+      - "Effusion"
+      - "Pneumonia"
+      - "Pleural_Thickening"
+      - "Cardiomegaly"
+      - "Nodule"
+      - "Mass"
+      - "Hernia"
+      - "Lung Lesion"
+      - "Fracture"
+      - "Lung Opacity"
+      - "Enlarged Cardiomediastinum"

@@ -123,7 +123,9 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
     scan_id = os.path.splitext(os.path.basename(img_path))[0]
     sidecar_json = os.path.splitext(img_path)[0] + "_vitals.json"
     T = PHASE1_THRESHOLDS
-    model_id = getattr(backbone_model, "weights", None)
+    model_id = getattr(backbone_model, "model_id", None) or getattr(backbone_model, "weights", None)
+    model_sha256 = getattr(backbone_model, "model_sha256", None)
+    registry_sha256 = getattr(backbone_model, "registry_sha256", None)
 
     print(f"\n=================== PROCESSING SCAN: {scan_id} ===================")
 
@@ -141,6 +143,8 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
             l3=l3,
             predictions=predictions,
             model_id=model_id,
+            model_sha256=model_sha256,
+            model_registry_sha256=registry_sha256,
             audit_log=audit_log,
             output_dir=output_dir,
         )
@@ -259,7 +263,9 @@ def main():
                 requested_actions=PHASE1_REQUESTED_ACTIONS,
                 thresholds=PHASE1_THRESHOLDS,
                 interlock_cfg=interlock_cfg,
-                model_id=getattr(backbone, "weights", None),
+                model_id=getattr(backbone, "model_id", None) or getattr(backbone, "weights", None),
+                model_sha256=getattr(backbone, "model_sha256", None),
+                model_registry_sha256=getattr(backbone, "registry_sha256", None),
                 audit_log=audit_log,
                 output_dir=output_dir)
         manifest_records.append(record)
