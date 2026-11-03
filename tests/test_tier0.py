@@ -40,10 +40,12 @@ class FakeSegmentationEngine:
         self.lung_pixels = int(lung_pixels)
 
     def predict_masks(self, xrv_image: np.ndarray):
-        mask = np.zeros((SEGMENTATION_SIZE, SEGMENTATION_SIZE), dtype=bool)
-        flat = mask.ravel()
-        flat[: min(self.lung_pixels, flat.size)] = True
-        return {"Left Lung": mask, "Right Lung": np.zeros_like(mask), "Heart": np.zeros_like(mask)}
+        mask_l = np.zeros((SEGMENTATION_SIZE, SEGMENTATION_SIZE), dtype=bool)
+        mask_r = np.zeros((SEGMENTATION_SIZE, SEGMENTATION_SIZE), dtype=bool)
+        half = max(35000, self.lung_pixels // 2)
+        mask_l.ravel()[:half] = True
+        mask_r.ravel()[:half] = True
+        return {"Left Lung": mask_l, "Right Lung": mask_r, "Heart": np.zeros_like(mask_l)}
 
 
 def make_mock_dicom(**overrides):
