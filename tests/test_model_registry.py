@@ -207,15 +207,16 @@ class TestModelRegistryAndStrictLoading(unittest.TestCase):
                 (src_dir / forbidden_file).exists(),
                 f"Unsafe trainer {forbidden_file} must be quarantined outside src/",
             )
-        # 2. Scan src/*.py and main.py for strict=False or randn
+        # 2. Scan src/*.py and main.py for forbidden patterns in executable lines
         files = list(src_dir.glob("*.py")) + [repo_root / "main.py"]
         for f in files:
-            text = f.read_text()
-            self.assertNotIn("strict=False", text, f"Forbidden strict=False in {f.name}")
-            self.assertNotIn("strict = False", text, f"Forbidden strict = False in {f.name}")
-            self.assertNotIn("torch.randn", text, f"Forbidden random tensor generation in {f.name}")
-            if "torch.load(" in text:
-                self.assertIn("weights_only=True", text, f"torch.load without weights_only=True in {f.name}")
+            lines = [ln.strip() for ln in f.read_text().splitlines() if ln.strip() and not ln.strip().startswith(("#", '"""', "'''", "*", "-"))]
+            for ln in lines:
+                self.assertNotIn("strict=False", ln, f"Forbidden strict=False in {f.name}: {ln}")
+                self.assertNotIn("strict = False", ln, f"Forbidden strict = False in {f.name}: {ln}")
+                self.assertNotIn("torch.randn", ln, f"Forbidden random tensor generation in {f.name}: {ln}")
+                if "torch.load(" in ln:
+                    self.assertIn("weights_only=True", ln, f"torch.load without weights_only=True in {f.name}: {ln}")
 
 
 if __name__ == "__main__":

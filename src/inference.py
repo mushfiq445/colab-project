@@ -3,7 +3,7 @@
 Safety invariants (Section 4 Rules 1, 2, 3, 8):
 - No silent fallbacks: if a requested checkpoint is missing, unreadable, or fails
   SHA-256 / state_dict verification, raise ModelUnavailable immediately.
-- Never call load_state_dict with strict=False.
+- Never disable strict mode during load_state_dict (always strict=True).
 - Never call torch.load without weights_only=True.
 - Every loaded model computes and exposes its deterministic weight SHA-256 hash
   and registry provenance for inclusion in the hash-chained audit log.
