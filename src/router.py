@@ -119,7 +119,7 @@ def execute_tier0_precheck(
     elif modality in BIOSIGNAL_MODALITIES:
         _run_biosignal(result, path, dev)
     else:
-        _record_error(result, "ORCHESTRATOR", InputError("ORCHESTRATOR", "INVALID_MODALITY", "Unsupported."))
+        _record_error(result, "ORCHESTRATOR", InputError("ORCHESTRATOR", "INVALID_MODALITY_TYPE", "Unsupported."))
     return result
 
 # Compatibility wrappers for legacy tests

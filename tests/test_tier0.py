@@ -332,7 +332,7 @@ class TestOrchestratorPrecheck(unittest.TestCase):
             arr = rng.integers(20, 220, size=(128, 128), dtype=np.uint8)
             Image.fromarray(arr, mode="L").save(p)
             res = execute_tier0_precheck(
-                p, "CXR", device="cpu", thorax_engine=FakeSegmentationEngine(lung_pixels=50000)
+                p, "CXR", device="cpu", thorax_engine=FakeSegmentationEngine(lung_pixels=150000)
             )
             self.assertTrue(res["passed"])
             self.assertEqual(res["route"], "TIER1_THORAX")

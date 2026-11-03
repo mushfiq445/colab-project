@@ -122,9 +122,23 @@ class ThoraxAuditReport:
 
 
 class ThoraxRouter:
-    def __init__(self, engine: Optional[SegmentationEngine] = None) -> None:
+    def __init__(
+        self,
+        engine: Optional[SegmentationEngine] = None,
+        *,
+        min_thoracic_pixels: Optional[int] = None,
+        min_left_lung_pixels: Optional[int] = None,
+        min_right_lung_pixels: Optional[int] = None,
+    ) -> None:
         self.engine = engine or get_default_engine("cpu")
-        self.thresholds = load_thorax_thresholds()
+        base = load_thorax_thresholds()
+        if min_thoracic_pixels is not None:
+            base["min_total_pixels"] = int(min_thoracic_pixels)
+        if min_left_lung_pixels is not None:
+            base["min_left_lung_pixels"] = int(min_left_lung_pixels)
+        if min_right_lung_pixels is not None:
+            base["min_right_lung_pixels"] = int(min_right_lung_pixels)
+        self.thresholds = base
 
     def audit(self, image: np.ndarray, declared_body_part: str) -> ThoraxAuditReport:
         norm_bp = (declared_body_part or "").strip().upper()
