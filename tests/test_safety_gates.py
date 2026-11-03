@@ -12,15 +12,15 @@ LABS_TS = "2026-11-02T06:00:00Z"
 
 # --- LAYER 1 TESTS ---
 def test_layer1_valid_chest():
-    assert validate_two_factor_organ("CHEST", thoracic_pixels=250000, min_pixel_threshold=1000) is True
+    assert validate_two_factor_organ("CHEST", thoracic_pixels=250000, min_pixel_threshold=100000) is True
 
 
 def test_layer1_rejection_wrong_dicom_tag():
-    assert validate_two_factor_organ("ABDOMEN", thoracic_pixels=150000, min_pixel_threshold=1000) is False
+    assert validate_two_factor_organ("ABDOMEN", thoracic_pixels=150000, min_pixel_threshold=100000) is False
 
 
 def test_layer1_rejection_low_pixel_count():
-    assert validate_two_factor_organ("CHEST", thoracic_pixels=450, min_pixel_threshold=1000) is False
+    assert validate_two_factor_organ("CHEST", thoracic_pixels=450, min_pixel_threshold=100000) is False
 
 
 # --- LAYER 2 TESTS ---

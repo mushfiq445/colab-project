@@ -36,7 +36,7 @@ from src.router import execute_tier0_precheck, validate_two_factor_organ
 
 
 class FakeSegmentationEngine:
-    def __init__(self, lung_pixels: int = 50000) -> None:
+    def __init__(self, lung_pixels: int = 150000) -> None:
         self.lung_pixels = int(lung_pixels)
 
     def predict_masks(self, xrv_image: np.ndarray):
@@ -177,13 +177,13 @@ class TestM02ThoraxRouter(unittest.TestCase):
         self.img = np.linspace(0.0, 255.0, 64 * 64, dtype=np.float32).reshape(64, 64)
 
     def test_17_valid_chest_passes(self):
-        router = ThoraxRouter(FakeSegmentationEngine(lung_pixels=80000))
+        router = ThoraxRouter(FakeSegmentationEngine(lung_pixels=150000))
         rep = router.audit(self.img, "CHEST")
         self.assertTrue(rep.passed)
         self.assertEqual(rep.thoracic_pixels, 80000)
 
     def test_18_wrong_body_part_rejected(self):
-        router = ThoraxRouter(FakeSegmentationEngine(lung_pixels=80000))
+        router = ThoraxRouter(FakeSegmentationEngine(lung_pixels=150000))
         with self.assertRaises(OrganRoutingError) as ctx:
             router.audit(self.img, "KNEE")
         self.assertEqual(ctx.exception.code, "M02_BODY_PART_MISMATCH")

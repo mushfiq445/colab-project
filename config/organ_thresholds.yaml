@@ -1,0 +1,9 @@
+# Single Source of Truth for Organ Segmentation Thresholds (Issue R4)
+# Calibrated for 512x512 grid (262,144 px total)
+schema_version: 1
+
+thorax:
+  min_total_pixels: 100000
+  min_left_lung_pixels: 30000
+  min_right_lung_pixels: 30000
+  max_saturation_pixels: 248000
