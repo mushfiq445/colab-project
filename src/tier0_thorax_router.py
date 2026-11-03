@@ -11,6 +11,7 @@ from PIL import Image
 from src.tier0_errors import OrganRoutingError
 
 SEGMENTATION_SIZE = 512
+MIN_THORACIC_PIXELS = 100000
 VALID_THORAX_BODY_PARTS = frozenset({"CHEST", "THORAX", "VISUAL_ONLY"})
 DEFAULT_THRESHOLDS_PATH = Path(__file__).resolve().parents[1] / "config" / "organ_thresholds.yaml"
 
