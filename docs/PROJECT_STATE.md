@@ -1,7 +1,7 @@
 # SaMD Project State
 
 ## 1. Current Status
-- **Phase:** Task 6 (Issue R9: Housekeeping) implemented; preparing for calibration.
+- **Phase:** Task 6 (Issue R9: Housekeeping) complete; Phase 1 Safety Architecture finished.
 - **Environment:** Android Termux -> GitHub -> Google Colab.
 - **Test Status:** Passing 113/113.
 
@@ -15,5 +15,6 @@
 
 ## 3. Open Issues & Priority Queue
 - **Task 6 (R9):** Pinned requirements.txt, added graceful rclone fallback.
-1. [NEXT] **Task 6.3:** Threshold Calibration Script (`scripts/calibrate_thresholds.py`).
-2. [PENDING] **Task 7:** 36-Agent Expansion: Spec alignment (S1-S11), backend schemas, async router.
+- **Task 6.3:** Created calibration harness (`scripts/calibrate_thresholds.py`).
+
+1. [NEXT] **Task 7:** 36-Agent Expansion: Spec alignment (S1-S11), backend schemas, async router.
