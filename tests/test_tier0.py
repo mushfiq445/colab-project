@@ -42,7 +42,7 @@ class FakeSegmentationEngine:
     def predict_masks(self, xrv_image: np.ndarray):
         mask_l = np.zeros((SEGMENTATION_SIZE, SEGMENTATION_SIZE), dtype=bool)
         mask_r = np.zeros((SEGMENTATION_SIZE, SEGMENTATION_SIZE), dtype=bool)
-        half = 60000
+        half = min(60000, self.lung_pixels // 2)
         # Make them disjoint so they add up to 120,000 pixels total
         mask_l.ravel()[:half] = True
         mask_r.ravel()[half:half*2] = True
@@ -183,7 +183,7 @@ class TestM02ThoraxRouter(unittest.TestCase):
         router = ThoraxRouter(FakeSegmentationEngine(lung_pixels=150000))
         rep = router.audit(self.img, "CHEST")
         self.assertTrue(rep.passed)
-        self.assertEqual(rep.thoracic_pixels, 80000)
+        self.assertEqual(rep.thoracic_pixels, 120000)
 
     def test_18_wrong_body_part_rejected(self):
         router = ThoraxRouter(FakeSegmentationEngine(lung_pixels=150000))

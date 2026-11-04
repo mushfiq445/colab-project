@@ -60,7 +60,7 @@ def test_layer4_renal_lockout():
     labs = {"eGFR": 20.0, "Creatinine": 2.5, "Platelets": 200000, "INR": 1.0, "Lactate": 1.0, "collected_at": LABS_TS}
     passed, interlocks = evaluate_contraindications(vitals, labs, now=NOW)
     assert passed is False
-    assert any("RENAL CONTRAST LOCKOUT" in i for i in interlocks)
+    assert any("L4_RENAL_LOCKOUT" in i for i in interlocks)
 
 
 def test_layer4_normal_pass():
@@ -74,4 +74,4 @@ def test_layer4_normal_pass():
 def test_layer4_missing_data_fails_closed():
     passed, interlocks = evaluate_contraindications({}, {}, now=NOW)
     assert passed is False
-    assert any("CANNOT BE EVALUATED" in i for i in interlocks)
+    assert any("MISSING_PROFILE_DATA" in i for i in interlocks)

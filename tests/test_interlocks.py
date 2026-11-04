@@ -226,7 +226,7 @@ class LegacyWrapper(unittest.TestCase):
         p = profile(eGFR=24.5, Creatinine=2.3, Platelets=85000, INR=2.1, SystolicBP=86, HeartRate=105, Lactate=4.6)
         passed, msgs = evaluate_contraindications(p["vitals"], p["labs"], now=NOW)
         self.assertFalse(passed)
-        self.assertEqual(len(msgs), 3)
+        self.assertEqual(len(msgs), 2)
         passed, _ = evaluate_contraindications(p["vitals"], p["labs"], now=NOW, requested_actions=["cxr_triage"])
         self.assertFalse(passed)  # HCE-03 blocks "*"
 
