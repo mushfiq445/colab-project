@@ -72,3 +72,10 @@ def evaluate_ups_gate(
         return heatmap, aamr, "L2_UPS_REJECTED"
         
     return heatmap, aamr, "PASSED"
+
+
+def calculate_aamr(heatmap: np.ndarray, mask: np.ndarray) -> float:
+    """Legacy helper for test_safety_gates.py compatibility."""
+    import cv2
+    mask_res = cv2.resize(mask.astype(np.uint8), (heatmap.shape[1], heatmap.shape[0]), interpolation=cv2.INTER_NEAREST).astype(bool)
+    return float(np.sum(heatmap[mask_res]) / (np.sum(heatmap) + 1e-9))
