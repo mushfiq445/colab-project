@@ -43,8 +43,9 @@ class FakeSegmentationEngine:
         mask_l = np.zeros((SEGMENTATION_SIZE, SEGMENTATION_SIZE), dtype=bool)
         mask_r = np.zeros((SEGMENTATION_SIZE, SEGMENTATION_SIZE), dtype=bool)
         half = 60000
+        # Make them disjoint so they add up to 120,000 pixels total
         mask_l.ravel()[:half] = True
-        mask_r.ravel()[:half] = True
+        mask_r.ravel()[half:half*2] = True
         return {"Left Lung": mask_l, "Right Lung": mask_r, "Heart": np.zeros_like(mask_l)}
 
 
