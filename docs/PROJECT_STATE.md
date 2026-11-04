@@ -1,7 +1,7 @@
 # SaMD Project State
 
 ## 1. Current Status
-- **Phase:** Task 5 (Issue R6: UPS & Grad-CAM) implemented; moving to Task 6 (Issue R9).
+- **Phase:** Task 6 (Issue R9: Housekeeping) implemented; preparing for calibration.
 - **Environment:** Android Termux -> GitHub -> Google Colab.
 - **Test Status:** Passing 113/113.
 
@@ -14,5 +14,6 @@
 - **Task 5 (R6):** Implemented pathology-specific Layer 2 UPS gating and bilinear Grad-CAM upsampling (norm5).
 
 ## 3. Open Issues & Priority Queue
-1. [NEXT] **Task 6 (R9):** Housekeeping, unpinned dependencies, rclone fallback, calibration script.
+- **Task 6 (R9):** Pinned requirements.txt, added graceful rclone fallback.
+1. [NEXT] **Task 6.3:** Threshold Calibration Script (`scripts/calibrate_thresholds.py`).
 2. [PENDING] **Task 7:** 36-Agent Expansion: Spec alignment (S1-S11), backend schemas, async router.

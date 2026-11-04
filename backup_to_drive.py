@@ -1,27 +1,27 @@
-import os
-import shutil
+import os, subprocess, shutil, sys
 
-gdrive_dest = '/content/drive/MyDrive/XRay_Predictions'
-os.makedirs(f"{gdrive_dest}/audit_logs", exist_ok=True)
-os.makedirs(f"{gdrive_dest}/scratch_backup", exist_ok=True)
+def sync_to_drive(src_dir, dest_name):
+    # Determine Colab vs Local
+    drive_mount = "/content/drive/MyDrive/XRay_Predictions"
+    
+    if os.path.exists("/content"):
+        # We are in Colab
+        dest = os.path.join(drive_mount, dest_name)
+        os.makedirs(dest, exist_ok=True)
+        print(f"Syncing to Google Drive: {dest}")
+        os.system(f"cp -r {src_dir}/* {dest}/ 2>/dev/null || true")
+    else:
+        # We are local (Termux), use rclone
+        print(f"Attempting to sync via rclone to remote: {dest_name}")
+        try:
+            subprocess.run(["rclone", "sync", src_dir, f"remote:{dest_name}"], check=True)
+        except FileNotFoundError:
+            print("[WARNING] rclone not found. Skipping remote sync. Data remains local.")
+            sys.exit(0)
+        except subprocess.CalledProcessError as e:
+            print(f"[ERROR] rclone sync failed: {e}")
 
-if os.path.exists("audit_logs"):
-    for item in os.listdir("audit_logs"):
-        s = os.path.join("audit_logs", item)
-        d = os.path.join(f"{gdrive_dest}/audit_logs", item)
-        if os.path.isdir(s):
-            shutil.copytree(s, d, dirs_exist_ok=True)
-        else:
-            shutil.copy2(s, d)
-    print("[SUCCESS] Audit logs synced to Google Drive!")
-
-scratch_path = "/tmp/samd_scratch"
-if os.path.exists(scratch_path):
-    for item in os.listdir(scratch_path):
-        s = os.path.join(scratch_path, item)
-        d = os.path.join(f"{gdrive_dest}/scratch_backup", item)
-        if os.path.isfile(s):
-            shutil.copy2(s, d)
-    print("[SUCCESS] Model checkpoints and heatmaps synced to Google Drive!")
-
-print("\nAll files are safely stored in Google Drive under: XRay_Predictions")
+if __name__ == "__main__":
+    os.makedirs("audit_logs", exist_ok=True)
+    sync_to_drive("audit_logs", "audit_logs_backup")
+    print("[SUCCESS] Backup sequence completed.")
