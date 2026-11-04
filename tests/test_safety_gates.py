@@ -38,22 +38,22 @@ def test_layer2_aamr_outside_mask():
 
 # --- LAYER 3 TESTS ---
 def test_layer3_low_entropy_pass():
-    clean_probs = np.zeros(18)
-    clean_probs[0] = 0.85
-    passed, entropy, ambig_count, _ = evaluate_epistemic_uncertainty(clean_probs)
+    # 18 highly confident negative predictions (0.01)
+    preds = np.full(18, 0.01)
+    passed, max_ent, ambig_count, _ = evaluate_epistemic_uncertainty(preds, entropy_cutoff=0.85, max_ambiguous_classes=2)
     assert passed is True
-    assert entropy < 0.85
+    assert max_ent < 0.1
     assert ambig_count == 0
 
-
 def test_layer3_rejection_high_entropy():
-    uncertain_probs = np.full(18, 0.50)
-    passed, entropy, _, _ = evaluate_epistemic_uncertainty(uncertain_probs)
+    # 17 confident negatives, 1 highly uncertain (0.5) prediction
+    preds = np.full(18, 0.01)
+    preds[3] = 0.5 
+    passed, max_ent, ambig_count, details = evaluate_epistemic_uncertainty(preds, entropy_cutoff=0.85, max_ambiguous_classes=2)
     assert passed is False
-    assert entropy > 0.85
+    assert max_ent > 0.85  # p=0.5 should equal 1.0 bit
+    assert details["failed_entropy"] is True
 
-
-# --- LAYER 4 TESTS ---
 def test_layer4_renal_lockout():
     vitals = {"HeartRate": 70, "SystolicBP": 120, "collected_at": VITALS_TS}
     labs = {"eGFR": 20.0, "Creatinine": 2.5, "Platelets": 200000, "INR": 1.0, "Lactate": 1.0, "collected_at": LABS_TS}

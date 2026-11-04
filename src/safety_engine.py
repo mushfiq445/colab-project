@@ -1,47 +1,45 @@
-import numpy as np
+"""Layer 3: Epistemic Uncertainty & Entropy Normalization (Task 4/R5)."""
 
+from __future__ import annotations
+import numpy as np
+from typing import Tuple, Dict, Any
 
 def evaluate_epistemic_uncertainty(
-    probabilities: np.ndarray,
+    predictions: np.ndarray,
     entropy_cutoff: float = 0.85,
-    ambiguity_range=(0.45, 0.65),
+    ambiguity_range: Tuple[float, float] = (0.45, 0.65),
     max_ambiguous_classes: int = 5,
-):
-    probs = np.clip(probabilities, 1e-7, 1.0 - 1e-7)
-    binary_entropy = -(probs * np.log2(probs) + (1 - probs) * np.log2(1 - probs))
-    mean_entropy = float(np.mean(binary_entropy))
-    ambiguous_count = int(
-        np.sum((probs >= ambiguity_range[0]) & (probs <= ambiguity_range[1]))
-    )
-
-    rejection_reasons = []
-    if mean_entropy > entropy_cutoff:
-        rejection_reasons.append(
-            f"Mean Entropy {mean_entropy:.3f} bits > {entropy_cutoff} bits"
-        )
-    if ambiguous_count >= max_ambiguous_classes:
-        rejection_reasons.append(
-            f"{ambiguous_count} pathologies clustered in equivocal range {ambiguity_range}"
-        )
-
-    passed = len(rejection_reasons) == 0
-    return passed, mean_entropy, ambiguous_count, rejection_reasons
-
-
-def evaluate_contraindications(
-    vitals, labs, *, config=None, now=None, requested_actions=None
-):
-    """Compatibility wrapper around the fail-closed interlock engine (src/interlocks.py).
-
-    Returns ``(passed, messages)``. ``passed`` is False when any non-CLEAR rule
-    (TRIGGERED or DATA_INVALID) blocks one of ``requested_actions`` (None = every action).
-    ``messages`` lists every TRIGGERED / DATA_INVALID rule, including ones that do not block
-    the requested actions. Thresholds come from config/clinical_interlocks.yaml; missing data
-    never defaults to healthy.
+) -> Tuple[bool, float, int, Dict[str, Any]]:
     """
-    from src.interlocks import evaluate_interlocks, load_interlock_config
+    Evaluates the predictive uncertainty of the model output.
+    Uses maximum class-wise binary cross-entropy to prevent dilution across 18 classes.
+    """
+    preds = np.asarray(predictions, dtype=np.float64)
+    if not np.all(np.isfinite(preds)):
+        return False, 1.0, len(preds), {"error": "NON_FINITE_PREDICTIONS"}
 
-    cfg = config if config is not None else load_interlock_config()
-    result = evaluate_interlocks({"vitals": vitals, "labs": labs}, config=cfg, now=now)
-    passed = not result.blocking_rules(requested_actions)
-    return passed, result.legacy_messages()
+    # Clip to prevent log2(0)
+    eps = 1e-9
+    p = np.clip(preds, eps, 1.0 - eps)
+    
+    # Calculate binary entropy per class in bits (max 1.0 at p=0.5)
+    class_entropies = -p * np.log2(p) - (1.0 - p) * np.log2(1.0 - p)
+    
+    # Prevent dilution by evaluating the most uncertain class (worst-case)
+    max_entropy = float(np.max(class_entropies))
+    mean_entropy = float(np.mean(class_entropies))
+    
+    # Calculate ambiguity count
+    ambig_count = int(np.sum((preds >= ambiguity_range[0]) & (preds <= ambiguity_range[1])))
+    
+    passed = bool((max_entropy <= entropy_cutoff) and (ambig_count <= max_ambiguous_classes))
+    
+    details = {
+        "max_class_entropy": max_entropy,
+        "mean_class_entropy": mean_entropy,
+        "ambiguous_classes_count": ambig_count,
+        "failed_entropy": max_entropy > entropy_cutoff,
+        "failed_ambiguity": ambig_count > max_ambiguous_classes
+    }
+    
+    return passed, max_entropy, ambig_count, details
