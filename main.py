@@ -98,7 +98,8 @@ def process_single_scan(img_path: str, segmenter, backbone_model, device, output
     target_layer = backbone_model.features.denseblock4.denselayer16.conv2
     attr_map, aamr, ups_status = evaluate_ups_gate(
         backbone_model, target_layer, input_tensor, pathologies.index(top_pathology),
-        lung_mask, diagnostic_threshold=PHASE1_THRESHOLDS["l2_diagnostic_threshold"],
+        pathology_name=top_pathology, organ_masks=t0_result["masks"] if "masks" in t0_result else {},
+        diagnostic_threshold=PHASE1_THRESHOLDS["l2_diagnostic_threshold"],
         aamr_threshold=PHASE1_THRESHOLDS["l2_aamr_threshold"], top_score=top_score
     )
     l2 = {"status": ups_status, "aamr": float(aamr)}

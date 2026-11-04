@@ -45,10 +45,6 @@ def evaluate_epistemic_uncertainty(
 
     return passed, max_entropy, ambig_count, details
 
-def evaluate_contraindications(profile: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
-    """Legacy wrapper for test suite compatibility (Layer 4)."""
-    if not profile:
-        return False, "MISSING_DATA"
-    if profile.get("egfr", 100) < 30:
-        return False, "RENAL_LOCKOUT"
-    return True, "PASS"
+def evaluate_contraindications(*args, **kwargs) -> Tuple[bool, str]:
+    from src.interlocks import evaluate_contraindications as _eval_real
+    return _eval_real(*args, **kwargs)
