@@ -28,7 +28,12 @@ def ensure_seed_assets(images_dir: str):
     json_path = os.path.join(images_dir, "pneumonia_vitals.json")
     if not os.path.exists(img_path):
         print(f"[FETCH SEED] Downloading genuine radiograph...")
-        urllib.request.urlretrieve("https://upload.wikimedia.org/wikipedia/commons/c/c8/Chest_Xray_PA_3-8-2010.png", img_path)
+        req = urllib.request.Request(
+            "https://upload.wikimedia.org/wikipedia/commons/c/c8/Chest_Xray_PA_3-8-2010.png",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        )
+        with urllib.request.urlopen(req) as resp, open(img_path, "wb") as out:
+            out.write(resp.read())
     if not os.path.exists(json_path):
         print(f"[CLINICAL DATA] No profile at {json_path}. Will HARD_LOCKOUT.")
 
