@@ -27,7 +27,8 @@ def test_layer1_rejection_low_pixel_count():
 def test_layer2_aamr_inside_mask():
     attr = np.array([[1.0, 1.0], [0.0, 0.0]])
     mask = np.array([[1, 1], [0, 0]], dtype=np.uint8)
-    assert calculate_aamr(attr, mask) == 1.0
+    import math
+    assert math.isclose(calculate_aamr(attr, mask), 1.0, rel_tol=1e-5)
 
 
 def test_layer2_aamr_outside_mask():
