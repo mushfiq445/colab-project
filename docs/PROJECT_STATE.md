@@ -17,4 +17,6 @@
 - **Task 6 (R9):** Pinned requirements.txt, added graceful rclone fallback.
 - **Task 6.3:** Created calibration harness (`scripts/calibrate_thresholds.py`).
 
-1. [NEXT] **Task 7:** 36-Agent Expansion: Spec alignment (S1-S11), backend schemas, async router.
+- **Task 7.1:** Built async Master Router and Agent Schemas.
+
+1. [NEXT] **Task 7.2:** Integrate Colab Gemini API. 36-Agent Expansion: Spec alignment (S1-S11), backend schemas, async router.
